@@ -15,7 +15,8 @@ Currently it only works under Python 2.7.
 ## Installation
 
 ```sh
-pythonw izuna.py # Use python2
+pip install -r requirements.txt
+python izuna.py # Use python2
 ```
 
 ## Usage
