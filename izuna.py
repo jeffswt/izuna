@@ -27,6 +27,8 @@ key_mon = {
     '-': False,
 }
 
+izuna_enabled = False
+
 def judge_is_ctrl_key(key_id, ext):
     mmp = {
         (45, 0): '0',
@@ -120,14 +122,16 @@ def onKeydownEvent(event):
     k_id = event.KeyID
     k_ext = event.Extended
     k_int = judge_is_ctrl_key(k_id, k_ext)
+    if not izuna_enabled:
+        return True
     if k_int != '':
         key_mon[k_int] = True
         if k_int in {'0', '\n'}:
             mouse_clickcon.trigger(k_int)
         elif k_int == '+':
-            win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
+                win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
         elif k_int == '/':
-            win32api.mouse_event(win32con.MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0)
+                win32api.mouse_event(win32con.MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0)
         return False
     return True
 
@@ -136,6 +140,8 @@ def onKeyupEvent(event):
     k_id = event.KeyID
     k_ext = event.Extended
     k_int = judge_is_ctrl_key(k_id, k_ext)
+    if not izuna_enabled:
+        return True
     if k_int != '':
         key_mon[k_int] = False
         if k_int in {'0', '\n'}:
@@ -209,26 +215,27 @@ def get_mouse_pos_vector():
     return vec
 
 def mouse_con_d():
+    global izuna_enabled
     # constants
     key_speed_vec = {
-        '1': Vector(-1.8,  1.8),
-        '2': Vector( 0.0,  1.8),
-        '3': Vector( 1.8,  1.8),
-        '4': Vector(-1.8,  0.0),
+        '1': Vector(-2.6,  2.6),
+        '2': Vector( 0.0,  2.6),
+        '3': Vector( 2.6,  2.6),
+        '4': Vector(-2.6,  0.0),
         '5': Vector( 0.0,  0.0),
-        '6': Vector( 1.8,  0.0),
-        '7': Vector(-1.8, -1.8),
-        '8': Vector( 0.0, -1.8),
-        '9': Vector( 1.8, -1.8),
+        '6': Vector( 2.6,  0.0),
+        '7': Vector(-2.6, -2.6),
+        '8': Vector( 0.0, -2.6),
+        '9': Vector( 2.6, -2.6),
     }
-    deaccel_r = 5.5
-    deaccel_f_r = 12.0
-    max_speed = 2.5
+    deaccel_r = 9.2
+    deaccel_f_r = 15.0
+    max_speed = 3.5
     t_delay = 0.005
-    pixel_rate = 640
+    pixel_rate = 1000
     window_size_abs = Vector(win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1))
     window_size = window_size_abs / pixel_rate
-    scroll_a = 60
+    scroll_a = 50
     scroll_dec_lim = 100
     scroll_dec_r = 0.02
     scroll_dec_a = 550
@@ -246,8 +253,10 @@ def mouse_con_d():
         last_time = cur_time
         # if not welcomed, skip
         if num_lock_on():
+            izuna_enabled = False
             time.sleep(t_delay)
             continue
+        izuna_enabled = True
         # define moving vector
         move_vec = Vector(0.0, 0.0)
         for i in range(1, 10):
@@ -276,8 +285,8 @@ def mouse_con_d():
         # add speed to position
         last_pos = position
         position = get_mouse_pos_vector() / pixel_rate
-        if (last_pos - position).length() * pixel_rate <= 1.6:
-            position = last_pos
+        # if (last_pos - position).length() * pixel_rate <= 1.6:
+        #     position = last_pos
         position += speed * t_past
         position.x = limit(position.x, 0, window_size.x)
         position.y = limit(position.y, 0, window_size.y)
@@ -338,10 +347,10 @@ def mouse_con_d():
         time.sleep(t_delay)
     return
 
-print 'izuna Pointing Device Driver / 0.17'
-print '========================================'
-print 'Author: jeffswt'
-print 'Usage:  See README.md'
+print ('izuna Pointing Device Driver / 0.17')
+print ('========================================')
+print ('Author: jeffswt')
+print ('Usage:  See README.md')
 
 hm = pyHook.HookManager()
 hm.KeyDown = onKeydownEvent
