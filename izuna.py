@@ -10,6 +10,59 @@ import win32con
 import win32gui
 
 
+class Vector:
+    """Vector implementation."""
+    def __init__(a, x=0, y=0):
+        if type(x) not in {int, float} or type(y) not in {int, float}:
+            raise TypeError('requires real number as arguments')
+        a.x = float(x)
+        a.y = float(y)
+        return
+
+    def __str__(a):
+        return '(%.4f, %.4f)' % (a.x, a.y)
+
+    def __repr__(a):
+        return 'Vector(%s, %s)' % (str(a.x), str(a.y))
+
+    def __eq__(a, b):
+        return a.x == b.x and a.y == b.y
+
+    def __bool__(a):
+        return a.x != 0 or a.y != 0
+
+    def __neg__(a):
+        return Vector(-a.x, -a.y)
+
+    def __add__(a, b):
+        return Vector(a.x + b.x, a.y + b.y)
+
+    def __sub__(a, b):
+        return Vector(a.x - b.x, a.y - b.y)
+
+    def __mul__(a, b):
+        if type(a) == type(b):
+            return float(a.x * b.x + a.y * b.y)
+        elif type(b) not in {int, float}:
+            raise TypeError('requires real number or vector as arguments')
+        return Vector(a.x * b, a.y * b)
+
+    def __truediv__(a, b):
+        if type(b) not in {int, float}:
+            raise TypeError('requires real number as arguments')
+        return Vector(a.x / b, a.y / b)
+
+    def __div__(a, b):
+        return a.__truediv__(b)
+
+    def __rmul__(a, b):
+        return a * b
+
+    def length(a):
+        return math.sqrt(a.x * a.x + a.y * a.y)
+    pass
+
+
 class MouseEmulator:
     """Emulates mouse actions."""
     def __init__(self):
@@ -102,70 +155,6 @@ class KeyStateMonitor:
     pass
 
 
-key_mon = {
-    '1': False,
-    '2': False,
-    '3': False,
-    '4': False,
-    '5': False,
-    '6': False,
-    '7': False,
-    '8': False,
-    '9': False,
-    '0': False,
-    '\n': False,
-    '+': False,
-    '/': False,
-    '*': False,
-    '-': False,
-}
-
-izuna_enabled = False
-
-def judge_is_ctrl_key(key_id, ext):
-    mmp = {
-        (45, 0): '0',
-        (35, 0): '1',
-        (40, 0): '2',
-        (34, 0): '3',
-        (37, 0): '4',
-        (12, 0): '5',
-        (39, 0): '6',
-        (36, 0): '7',
-        (38, 0): '8',
-        (33, 0): '9',
-        (13, 1): '\n',
-        (107, 0): '+',
-        (111, 1): '/',
-        (106, 0): '*',
-        (109, 0): '-',
-    }
-    return mmp.get((key_id, ext), '')
-
-class POINT(Structure):
-    _fields_ = [("x", c_ulong),("y", c_ulong)]
-
-def get_mouse_pos():
-    po = POINT()
-    windll.user32.GetCursorPos(byref(po))
-    return int(po.x), int(po.y)
-
-def mouse_move(x, y):
-    windll.user32.SetCursorPos(int(x), int(y))
-    return
-
-def mouse_ldown():
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-    return
-
-def mouse_lup():
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-    return
-
-def num_lock_on():
-    vk = win32api.GetKeyState(win32con.VK_NUMLOCK)
-    return vk == 1 or vk == -127
-
 class MouseClickController:
     def __init__(self):
         self.trig_stat = 0
@@ -210,102 +199,6 @@ class MouseClickController:
     pass
 mouse_clickcon = MouseClickController()
 
-def onKeydownEvent(event):
-    k_str = event.Key
-    k_id = event.KeyID
-    k_ext = event.Extended
-    k_int = judge_is_ctrl_key(k_id, k_ext)
-    if not izuna_enabled:
-        return True
-    if k_int != '':
-        key_mon[k_int] = True
-        if k_int in {'0', '\n'}:
-            mouse_clickcon.trigger(k_int)
-        elif k_int == '+':
-                win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-        elif k_int == '/':
-                win32api.mouse_event(win32con.MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0)
-        return False
-    return True
-
-def onKeyupEvent(event):
-    k_str = event.Key
-    k_id = event.KeyID
-    k_ext = event.Extended
-    k_int = judge_is_ctrl_key(k_id, k_ext)
-    if not izuna_enabled:
-        return True
-    if k_int != '':
-        key_mon[k_int] = False
-        if k_int in {'0', '\n'}:
-            mouse_clickcon.untrigger(k_int)
-        elif k_int == '+':
-            win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
-        elif k_int == '/':
-            win32api.mouse_event(win32con.MOUSEEVENTF_MIDDLEUP, 0, 0, 0, 0)
-        return False
-    return True
-
-def limit(a, x, y):
-    return min(y, max(a, x))
-
-def limit_abs(a, b):
-    if b < 0:
-        b = -b
-    return limit(a, -b, b)
-
-def sgn(a):
-    if a > 0:
-        return 1
-    elif a < 0:
-        return -1
-    return 0
-
-class Vector:
-    def __init__(a, x=0, y=0):
-        if type(x) not in {int, float} or type(y) not in {int, float}:
-            raise TypeError('requires real number as arguments')
-        a.x = float(x)
-        a.y = float(y)
-        return
-    def __str__(a):
-        return '(%.4f, %.4f)' % (a.x, a.y)
-    def __repr__(a):
-        return 'Vector(%s, %s)' % (str(a.x), str(a.y))
-    def __eq__(a, b):
-        return a.x == b.x and a.y == b.y
-    def __bool__(a):
-        return a.x != 0 or a.y != 0
-    def __neg__(a):
-        return Vector(-a.x, -a.y)
-    def __add__(a, b):
-        return Vector(a.x + b.x, a.y + b.y)
-    def __sub__(a, b):
-        return Vector(a.x - b.x, a.y - b.y)
-    def __mul__(a, b):
-        if type(a) == type(b):
-            return float(a.x * b.x + a.y * b.y)
-        elif type(b) not in {int, float}:
-            raise TypeError('requires real number or vector as arguments')
-        return Vector(a.x * b, a.y * b)
-    def __truediv__(a, b):
-        if type(b) not in {int, float}:
-            raise TypeError('requires real number as arguments')
-        return Vector(a.x / b, a.y / b)
-    def __div__(a, b):
-        return a.__truediv__(b)
-    def __rmul__(a, b):
-        return a * b
-    def length(a):
-        return math.sqrt(a.x * a.x + a.y * a.y)
-    def limit_abs(a, b):
-        return Vector(limit_abs(a.x, b), limit_abs(a.y, b))
-    pass
-
-def get_mouse_pos_vector():
-    vec = get_mouse_pos()
-    vec = Vector(vec[0], vec[1])
-    return vec
 
 def mouse_con_d():
     global izuna_enabled
@@ -440,10 +333,6 @@ def mouse_con_d():
         time.sleep(t_delay)
     return
 
-print ('izuna Pointing Device Driver / 0.17')
-print ('========================================')
-print ('Author: jeffswt')
-print ('Usage:  See README.md')
 
 hm = pyHook.HookManager()
 hm.KeyDown = onKeydownEvent
