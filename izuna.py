@@ -9,6 +9,35 @@ import win32api
 import win32con
 import win32gui
 
+
+class KeyStateMonitor:
+    """Instantaneously monitors all states, if required."""
+    def __init__(self):
+        self.rules = [
+            # Key Name, Triggered Action, Virtual Key ID
+            ('7', 'move-upper-left', (36, 0)),
+            ('4', 'move-left', (37, 0)),
+            ('1', 'move-lower-left', (35, 0)),
+            ('2', 'move-down', (40, 0)),
+            ('3', 'move-lower-right', (34, 0)),
+            ('6', 'move-right', (39, 0)),
+            ('9', 'move-upper-right', (33, 0)),
+            ('8', 'move-up', (38, 0)),
+            ('5', 'left-click', (12, 0)),
+            ('\n', 'left-click', (13, 1)),
+            ('0', 'left-click', (45, 0)),
+            ('+', 'right-click', (106, 0)),
+            ('/', 'middle-click', (111, 1)),
+            ('*', 'wheel-scroll-up', (106, 0)),
+            ('-', 'wheel-scroll-down', (109, 0)),
+        ]
+        # Generate indices
+        self.index_id_to_name = dict((i[2], i[0]) for i in self.rules)
+        self.index_name_to_action = dict((i[0], i[1]) for i in self.rules)
+        return
+    pass
+
+
 key_mon = {
     '1': False,
     '2': False,
