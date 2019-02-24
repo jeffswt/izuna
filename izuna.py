@@ -66,6 +66,9 @@ class Vector:
 class MouseEmulator:
     """Emulates mouse actions."""
     def __init__(self):
+        self.x, self.y = self.get_pointer_pos()
+        self.frame_rate = 240  # Frames per second
+        self.frame_time = 1.0 / self.frame_rate  # Time per frame
         return
 
     def change_key_state(self, key, state):
@@ -93,10 +96,15 @@ class MouseEmulator:
         # TODO: float available?
         # TODO: relative param not implemented
         if relative:
-            _x, _y = self.get_pointer_pos()
+            # _x, _y = self.get_pointer_pos()
+            _x, _y = self.x, self.y
             x, y = _x + x, _y - y
+            self.x, self.y = x, y
         windll.user32.SetCursorPos(int(x), int(y))
         return
+
+    def scroll_wheel(self, distance):
+        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, int(distance))
     pass
 
 
@@ -196,13 +204,13 @@ class ActionHandler:
             'middle-click': 'middle',
         }
         # Acceleration functions
-        self.func_accel = (lambda _: math.log(_ + 1, 1.08) ** 0.57 * 0.362)
-        self.func_accel_r = (lambda _: 1.08 ** ((_ / 0.362) ** (1 / 0.57)) - 1)
-        self.func_decel = (lambda _: 0.0 if _ >= 0.85 else
-                           math.log(_ / 0.85, 0.502) ** 1.618)
-        self.func_decel_r = (lambda _: 0.85 if _ <= 0.0 else
-                             0.502 ** (_ ** (1 / 1.618)) * 0.85)
-        self.vec_scale = 8.62
+        self.func_accel = (lambda _: math.log(_ + 1, 1.08) ** 0.56 * 0.358)
+        self.func_accel_r = (lambda _: 1.08 ** ((_ / 0.362) ** (1 / 0.56)) - 1)
+        self.func_decel = (lambda l, _: 0.0 if _ >= l / 1.37 else
+                           (_ - l / 1.37) ** 2 * 1.37 / l)
+        self.func_decel = (lambda l, _: 0.0 if _ >= math.sqrt(l) / 4.51 else
+                           (_ * 4.51 - math.sqrt(l)) ** 2)
+        self.vec_scale = 516.7569  # Steins;Gate
         self.wheel_scale = 1.0
         # Lists
         # enabled: current status, True if pressed down
@@ -238,6 +246,7 @@ class ActionHandler:
         return
 
     def render_frame(self):
+        # Process cursor position
         vec = Vector(0, 0)
         cur_time = time.time()
         for action in self.move_speed:
@@ -247,12 +256,16 @@ class ActionHandler:
                 last_tm = self.func_accel_r(self.vec_combo_last[action])
                 combo = self.func_accel(last_tm + delta_tm)
             else:
-                last_tm = self.func_decel_r(self.vec_combo_last[action])
-                combo = self.func_decel(last_tm + delta_tm)
+                # last_tm = self.func_decel_r(self.vec_combo_last[action])
+                # combo = self.func_decel(last_tm + delta_tm)
+                combo = self.func_decel(self.vec_combo_last[action], delta_tm)
             vec = vec + self.move_speed[action] * combo
             self.vec_combo[action] = combo
         vec *= self.vec_scale
+        vec *= self.emulator.frame_time
         self.emulator.move_pointer_pos(vec.x, vec.y, relative=True)
+        # Process wheel status
+
         return
     pass
 
@@ -263,14 +276,14 @@ def main():
     key_state_monitor = KeyStateMonitor(action_handler=action_handler)
     key_state_monitor.load_hook()
 
-    def render_frame(action_handler):
+    def render_frame(action_handler, mouse_emulator):
         while True:
             action_handler.render_frame()
-            time.sleep(0.03)
+            time.sleep(mouse_emulator.frame_time)  # 240fps
         return
 
     render_thread = threading.Thread(target=render_frame,
-                                     args=[action_handler])
+                                     args=[action_handler, mouse_emulator])
     render_thread.start()
     pythoncom.PumpMessages()
     return
