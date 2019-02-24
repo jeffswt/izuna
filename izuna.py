@@ -67,7 +67,7 @@ class MouseEmulator:
     """Emulates mouse actions."""
     def __init__(self):
         self.x, self.y = self.get_pointer_pos()
-        self.frame_rate = 240  # Frames per second
+        self.frame_rate = 120  # Frames per second
         self.frame_time = 1.0 / self.frame_rate  # Time per frame
         return
 
@@ -185,13 +185,13 @@ class ActionHandler:
     def __init__(self, emulator=None):
         # Constants
         self.move_speed = {
-            'move-upper-left': Vector(-1.414, 1.414),
-            'move-left': Vector(-2.0, 0),
-            'move-lower-left': Vector(-1.414, -1.414),
-            'move-down': Vector(0, -2.0),
-            'move-lower-right': Vector(1.414, -1.414),
-            'move-right': Vector(2.0, 0),
-            'move-upper-right': Vector(1.414, 1.414),
+            'move-upper-left': Vector(-1.5, 1.3),
+            'move-left': Vector(-2.1, 0),
+            'move-lower-left': Vector(-1.5, -1.2),
+            'move-down': Vector(0, -1.9),
+            'move-lower-right': Vector(1.5, -1.2),
+            'move-right': Vector(2.1, 0),
+            'move-upper-right': Vector(1.5, 1.3),
             'move-up': Vector(0, 2.0),
         }
         self.scroll_speed = {
@@ -211,7 +211,7 @@ class ActionHandler:
         self.func_decel = (lambda l, _: 0.0 if _ >= math.sqrt(l) / 4.51 else
                            (_ * 4.51 - math.sqrt(l)) ** 2)
         self.vec_scale = 516.7569  # Steins;Gate
-        self.wheel_scale = 1.0
+        self.wheel_scale = 1234.56
         # Lists
         # enabled: current status, True if pressed down
         # time: when did the current status started
@@ -246,9 +246,9 @@ class ActionHandler:
         return
 
     def render_frame(self):
+        cur_time = time.time()
         # Process cursor position
         vec = Vector(0, 0)
-        cur_time = time.time()
         for action in self.move_speed:
             delta_tm = cur_time - self.vec_time[action]
             combo = 0.0
@@ -256,8 +256,6 @@ class ActionHandler:
                 last_tm = self.func_accel_r(self.vec_combo_last[action])
                 combo = self.func_accel(last_tm + delta_tm)
             else:
-                # last_tm = self.func_decel_r(self.vec_combo_last[action])
-                # combo = self.func_decel(last_tm + delta_tm)
                 combo = self.func_decel(self.vec_combo_last[action], delta_tm)
             vec = vec + self.move_speed[action] * combo
             self.vec_combo[action] = combo
@@ -265,7 +263,20 @@ class ActionHandler:
         vec *= self.emulator.frame_time
         self.emulator.move_pointer_pos(vec.x, vec.y, relative=True)
         # Process wheel status
-
+        wheel = 0.0
+        for action in self.scroll_speed:
+            delta_tm = cur_time - self.wheel_time[action]
+            combo = 0.0
+            if self.wheel_enabled[action]:
+                last_tm = self.func_accel_r(self.wheel_combo_last[action])
+                combo = self.func_accel(last_tm + delta_tm)
+            else:
+                combo = self.func_decel(self.wheel_combo_last[action],
+                                        delta_tm)
+            wheel = wheel + self.scroll_speed[action] * combo
+        wheel *= self.wheel_scale
+        wheel *= self.emulator.frame_time
+        self.emulator.scroll_wheel(wheel)
         return
     pass
 
