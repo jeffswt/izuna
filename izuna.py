@@ -10,6 +10,40 @@ import win32con
 import win32gui
 
 
+class MouseEmulator:
+    """Emulates mouse actions."""
+    def __init__(self):
+        return
+
+    def change_key_state(self, key, state):
+        mapping = {
+            ('left', True): win32con.MOUSEEVENTF_LEFTDOWN,
+            ('left', False): win32con.MOUSEEVENTF_LEFTUP,
+            ('right', True): win32con.MOUSEEVENTF_RIGHTDOWN,
+            ('right', False): win32con.MOUSEEVENTF_RIGHTUP,
+            ('middle', True): win32con.MOUSEEVENTF_MIDDLEDOWN,
+            ('middle', False): win32con.MOUSEEVENTF_MIDDLEUP,
+        }
+        if (key, state) not in mapping:
+            return False
+        win32api.mouse_event(mapping[(key, state)], 0, 0, 0, 0)
+        return True
+
+    def get_pointer_pos(self):
+        class POINT(Structure):
+            _fields_ = [("x", c_ulong),("y", c_ulong)]
+        po = POINT()
+        windll.user32.GetCursorPos(byref(po))
+        return int(po.x), int(po.y)
+
+    def move_pointer_pos(self, x, y, relative=False):
+        # TODO: float available?
+        # TODO: relative param not implemented
+        windll.user32.SetCursorPos(int(x), int(y))
+        return
+    pass
+
+
 class KeyStateMonitor:
     """Instantaneously monitors all states, if required."""
     def __init__(self, action_callback=None):
