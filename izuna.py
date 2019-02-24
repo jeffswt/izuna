@@ -155,6 +155,51 @@ class KeyStateMonitor:
     pass
 
 
+class ActionHandler:
+    """Handles actions initiated by key presses."""
+    def __init__(self, emulator=None):
+        # Constants
+        self.move_speed = {
+            'move-upper-left': (-1.414, 1.414),
+            'move-left': (-2.0, 0),
+            'move-lower-left': (-1.414, -1.414),
+            'move-down': (0, -2.0),
+            'move-lower-right': (1.414, -1.414),
+            'move-right': (2.0, 0),
+            'move-upper-right': (1.414, 1.414),
+            'move-up': (0, 2.0),
+        }
+        self.scroll_speed = {
+            'wheel-scroll-up': 2.0,
+            'wheel-scroll-down': -2.0,
+        }
+        self.keys = {
+            'left-click': 'left',
+            'right-click': 'right',
+            'middle-click': 'middle',
+        }
+        # Lists
+        self.vec_enabled = dict((i, False) for i in self.move_speed)
+        self.vec_time = dict((i, 0.0) for i in self.move_speed)
+        self.wheel_enabled = dict((i, False) for i in self.scroll_speed)
+        self.wheel_time = dict((i, 0.0) for i in self.scroll_speed)
+        # Mouse emulator
+        self.emulator = emulator
+        return
+
+    def callback(self, action, state):
+        if action in self.move_speed:
+            self.vec_enabled[action] = state
+            self.vec_time = time.time()
+        elif action in self.scroll_speed:
+            self.wheel_enabled[action] = state
+            self.wheel_time[action] = time.time()
+        elif action in self.keys:
+            emulator.mouse.change_key_state(self.keys[action], state)
+        return
+    pass
+
+
 class MouseClickController:
     def __init__(self):
         self.trig_stat = 0
