@@ -12,7 +12,7 @@ import win32gui
 
 class KeyStateMonitor:
     """Instantaneously monitors all states, if required."""
-    def __init__(self):
+    def __init__(self, action_callback=None):
         self.rules = [
             # Key Name, Triggered Action, Virtual Key ID
             ('7', 'move-upper-left', (36, 0)),
@@ -32,9 +32,39 @@ class KeyStateMonitor:
             ('-', 'wheel-scroll-down', (109, 0)),
         ]
         # Generate indices
+        self.index_ids = set(i[2] for i in self.rules)
         self.index_id_to_name = dict((i[2], i[0]) for i in self.rules)
         self.index_name_to_action = dict((i[0], i[1]) for i in self.rules)
+        self.index_id_to_action = dict((i[2], i[1]) for i in self.rules)
+        # Key states
+        self.key_states = dict((i[2], False) for i in self.rules)
+        self.action_states = dict((i[1], False) for i in self.rules)
+        # Callback
+        if action_callback is None:
+            action_callback = (lambda action, state: False)
+        self.action_callback = action_callback
         return
+
+    def is_monitoring(self):
+        """Checks if izuna is still on (num lock is off)."""
+        vk = win32api.GetKeyState(win32con.VK_NUMLOCK)
+        return vk == 1 or vk == -127
+
+    def on_key_event(self, event, state):
+        """Key up/down event handler, returns False if key captured."""
+        k_str, k_id, k_ext = event.Key, event.KeyID, event.Extended
+        if (k_id, k_ext) not in self.index_ids:
+            return True
+        if not self.is_monitoring():
+            return True
+        key = self.index_id_to_name[(k_id, k_ext)]
+        action = self.index_id_to_action[(k_id, k_ext)]
+        do_callback = self.action_states[action] != state
+        self.key_states[key] = state
+        self.action_states[action] = state
+        if do_callback:
+            self.action_callback(action, state)
+        return False
     pass
 
 
