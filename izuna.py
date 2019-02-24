@@ -99,7 +99,7 @@ class MouseEmulator:
 
 class KeyStateMonitor:
     """Instantaneously monitors all states, if required."""
-    def __init__(self, action_callback=None):
+    def __init__(self, action_handler=None):
         self.rules = [
             # Key Name, Triggered Action, Virtual Key ID
             ('7', 'move-upper-left', (36, 0)),
@@ -113,7 +113,7 @@ class KeyStateMonitor:
             ('5', 'left-click', (12, 0)),
             ('\n', 'left-click', (13, 1)),
             ('0', 'left-click', (45, 0)),
-            ('+', 'right-click', (106, 0)),
+            ('+', 'right-click', (107, 0)),
             ('/', 'middle-click', (111, 1)),
             ('*', 'wheel-scroll-up', (106, 0)),
             ('-', 'wheel-scroll-down', (109, 0)),
@@ -127,9 +127,7 @@ class KeyStateMonitor:
         self.key_states = dict((i[2], False) for i in self.rules)
         self.action_states = dict((i[1], False) for i in self.rules)
         # Callback
-        if action_callback is None:
-            action_callback = (lambda action, state: False)
-        self.action_callback = action_callback
+        self.action_callback = action_handler
         return
 
     def is_monitoring(self):
@@ -142,7 +140,7 @@ class KeyStateMonitor:
         k_str, k_id, k_ext = event.Key, event.KeyID, event.Extended
         if (k_id, k_ext) not in self.index_ids:
             return True
-        if not self.is_monitoring():
+        if self.is_monitoring():
             return True
         key = self.index_id_to_name[(k_id, k_ext)]
         action = self.index_id_to_action[(k_id, k_ext)]
@@ -150,8 +148,24 @@ class KeyStateMonitor:
         self.key_states[key] = state
         self.action_states[action] = state
         if do_callback:
-            self.action_callback(action, state)
+            if self.action_callback is not None:
+                self.action_callback.callback(action, state)
         return False
+
+    def load_hook(self):
+        hm = pyHook.HookManager()
+
+        def on_keydown_event(event):
+            return self.on_key_event(event, True)
+
+        def on_keyup_event(event):
+            return self.on_key_event(event, False)
+
+        hm.KeyDown = on_keydown_event
+        hm.KeyUp = on_keyup_event
+        hm.HookKeyboard()
+        # pythoncom.PumpMessages()
+        return
     pass
 
 
@@ -188,6 +202,7 @@ class ActionHandler:
         return
 
     def callback(self, action, state):
+        print(action, state)
         if action in self.move_speed:
             self.vec_enabled[action] = state
             self.vec_time = time.time()
@@ -195,54 +210,21 @@ class ActionHandler:
             self.wheel_enabled[action] = state
             self.wheel_time[action] = time.time()
         elif action in self.keys:
-            emulator.mouse.change_key_state(self.keys[action], state)
+            self.emulator.change_key_state(self.keys[action], state)
         return
     pass
 
 
-class MouseClickController:
-    def __init__(self):
-        self.trig_stat = 0
-        self.keys_trig = {'0': False, '\n': False}
-        self.pressed = False
-        self.lock = threading.Lock()
-        return
-    def trigger(self, key):
-        if self.keys_trig[key]:
-            return
-        self.keys_trig[key] = True
-        self.lock.acquire()
-        if self.trig_stat == 0 and not self.pressed:
-            mouse_ldown()
-        self.trig_stat += 1
-        self.lock.release()
-        return
-    def untrigger(self, key):
-        if not self.keys_trig[key]:
-            return
-        self.keys_trig[key] = False
-        self.lock.acquire()
-        if self.trig_stat == 1 and not self.pressed:
-            mouse_lup()
-        self.trig_stat -= 1
-        self.lock.release()
-        return
-    def press(self):
-        self.lock.acquire()
-        if self.trig_stat == 0 and not self.pressed:
-            mouse_ldown()
-        self.pressed = True
-        self.lock.release()
-        return
-    def unpress(self):
-        self.lock.acquire()
-        if self.trig_stat == 0 and self.pressed:
-            mouse_lup()
-        self.pressed = False
-        self.lock.release()
-        return
-    pass
-mouse_clickcon = MouseClickController()
+def main():
+    mouse_emulator = MouseEmulator()
+    action_handler = ActionHandler(emulator=mouse_emulator)
+    key_state_monitor = KeyStateMonitor(action_handler=action_handler)
+    key_state_monitor.load_hook()
+    pythoncom.PumpMessages()
+
+
+if __name__ == "__main__":
+    main()
 
 
 def mouse_con_d():
@@ -377,11 +359,3 @@ def mouse_con_d():
         # sleep for a time break
         time.sleep(t_delay)
     return
-
-
-hm = pyHook.HookManager()
-hm.KeyDown = onKeydownEvent
-hm.KeyUp = onKeyupEvent
-hm.HookKeyboard()
-threading.Thread(target=mouse_con_d, args=[]).start()
-pythoncom.PumpMessages()
