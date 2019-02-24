@@ -92,6 +92,9 @@ class MouseEmulator:
     def move_pointer_pos(self, x, y, relative=False):
         # TODO: float available?
         # TODO: relative param not implemented
+        if relative:
+            _x, _y = self.get_pointer_pos()
+            x, y = _x + x, _y - y
         windll.user32.SetCursorPos(int(x), int(y))
         return
     pass
@@ -192,11 +195,28 @@ class ActionHandler:
             'right-click': 'right',
             'middle-click': 'middle',
         }
+        # Acceleration functions
+        self.func_accel = (lambda _: math.log(_ + 1, 1.08) ** 0.57 * 0.362)
+        self.func_accel_r = (lambda _: 1.08 ** ((_ / 0.362) ** (1 / 0.57)) - 1)
+        self.func_decel = (lambda _: 0.0 if _ >= 0.85 else
+                           math.log(_ / 0.85, 0.502) ** 1.618)
+        self.func_decel_r = (lambda _: 0.85 if _ <= 0.0 else
+                             0.502 ** (_ ** (1 / 1.618)) * 0.85)
+        self.vec_scale = 8.62
+        self.wheel_scale = 1.0
         # Lists
+        # enabled: current status, True if pressed down
+        # time: when did the current status started
+        # combo: current combo
+        # combo_last: last combo achieved before state change
         self.vec_enabled = dict((i, False) for i in self.move_speed)
         self.vec_time = dict((i, 0.0) for i in self.move_speed)
+        self.vec_combo = dict((i, 0.0) for i in self.move_speed)
+        self.vec_combo_last = dict((i, 0.0) for i in self.move_speed)
         self.wheel_enabled = dict((i, False) for i in self.scroll_speed)
         self.wheel_time = dict((i, 0.0) for i in self.scroll_speed)
+        self.wheel_combo = dict((i, 0.0) for i in self.scroll_speed)
+        self.wheel_combo_last = dict((i, 0.0) for i in self.scroll_speed)
         # Mouse emulator
         self.emulator = emulator
         return
@@ -204,9 +224,13 @@ class ActionHandler:
     def callback(self, action, state):
         print(action, state)
         if action in self.move_speed:
+            if self.vec_enabled[action] != state:
+                self.vec_combo_last[action] = self.vec_combo[action]
             self.vec_enabled[action] = state
             self.vec_time[action] = time.time()
         elif action in self.scroll_speed:
+            if self.wheel_enabled[action] != state:
+                self.wheel_combo_last[action] = self.wheel_combo[action]
             self.wheel_enabled[action] = state
             self.wheel_time[action] = time.time()
         elif action in self.keys:
@@ -217,14 +241,18 @@ class ActionHandler:
         vec = Vector(0, 0)
         cur_time = time.time()
         for action in self.move_speed:
-            dt = cur_time - self.vec_time[action]
+            delta_tm = cur_time - self.vec_time[action]
+            combo = 0.0
             if self.vec_enabled[action]:
-                combo = min(dt, 2.0)
-                vec = vec + self.move_speed[action] * combo
+                last_tm = self.func_accel_r(self.vec_combo_last[action])
+                combo = self.func_accel(last_tm + delta_tm)
             else:
-                combo = max(2.0 - dt, 0.0)
-                vec = vec + self.move_speed[action] * combo
-        print(vec)
+                last_tm = self.func_decel_r(self.vec_combo_last[action])
+                combo = self.func_decel(last_tm + delta_tm)
+            vec = vec + self.move_speed[action] * combo
+            self.vec_combo[action] = combo
+        vec *= self.vec_scale
+        self.emulator.move_pointer_pos(vec.x, vec.y, relative=True)
         return
     pass
 
@@ -238,7 +266,7 @@ def main():
     def render_frame(action_handler):
         while True:
             action_handler.render_frame()
-            time.sleep(0.1)
+            time.sleep(0.03)
         return
 
     render_thread = threading.Thread(target=render_frame,
