@@ -174,14 +174,14 @@ class ActionHandler:
     def __init__(self, emulator=None):
         # Constants
         self.move_speed = {
-            'move-upper-left': (-1.414, 1.414),
-            'move-left': (-2.0, 0),
-            'move-lower-left': (-1.414, -1.414),
-            'move-down': (0, -2.0),
-            'move-lower-right': (1.414, -1.414),
-            'move-right': (2.0, 0),
-            'move-upper-right': (1.414, 1.414),
-            'move-up': (0, 2.0),
+            'move-upper-left': Vector(-1.414, 1.414),
+            'move-left': Vector(-2.0, 0),
+            'move-lower-left': Vector(-1.414, -1.414),
+            'move-down': Vector(0, -2.0),
+            'move-lower-right': Vector(1.414, -1.414),
+            'move-right': Vector(2.0, 0),
+            'move-upper-right': Vector(1.414, 1.414),
+            'move-up': Vector(0, 2.0),
         }
         self.scroll_speed = {
             'wheel-scroll-up': 2.0,
@@ -205,12 +205,26 @@ class ActionHandler:
         print(action, state)
         if action in self.move_speed:
             self.vec_enabled[action] = state
-            self.vec_time = time.time()
+            self.vec_time[action] = time.time()
         elif action in self.scroll_speed:
             self.wheel_enabled[action] = state
             self.wheel_time[action] = time.time()
         elif action in self.keys:
             self.emulator.change_key_state(self.keys[action], state)
+        return
+
+    def render_frame(self):
+        vec = Vector(0, 0)
+        cur_time = time.time()
+        for action in self.move_speed:
+            dt = cur_time - self.vec_time[action]
+            if self.vec_enabled[action]:
+                combo = min(dt, 2.0)
+                vec = vec + self.move_speed[action] * combo
+            else:
+                combo = max(2.0 - dt, 0.0)
+                vec = vec + self.move_speed[action] * combo
+        print(vec)
         return
     pass
 
@@ -220,7 +234,18 @@ def main():
     action_handler = ActionHandler(emulator=mouse_emulator)
     key_state_monitor = KeyStateMonitor(action_handler=action_handler)
     key_state_monitor.load_hook()
+
+    def render_frame(action_handler):
+        while True:
+            action_handler.render_frame()
+            time.sleep(0.1)
+        return
+
+    render_thread = threading.Thread(target=render_frame,
+                                     args=[action_handler])
+    render_thread.start()
     pythoncom.PumpMessages()
+    return
 
 
 if __name__ == "__main__":
