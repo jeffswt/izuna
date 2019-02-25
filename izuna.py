@@ -67,7 +67,8 @@ class MouseEmulator:
     """Emulates mouse actions."""
     def __init__(self):
         self.x, self.y = self.get_pointer_pos()
-        self.frame_rate = 432  # Frames per second
+        self.pos_buffer = (0.0, 0.0)  # Move buffer
+        self.frame_rate = 288  # Frames per second
         self.frame_time = 1.0 / self.frame_rate  # Time per frame
         return
 
@@ -104,6 +105,19 @@ class MouseEmulator:
             self.x, self.y = x, y
         if (int(x), int(y)) != (int(_x), int(_y)):
             windll.user32.SetCursorPos(int(x), int(y))
+        return
+
+    def move_pointer_pos_async(self, x, y):
+        """Move pointer position, asynchronously, forced relative position."""
+        self.pos_buffer = (self.pos_buffer[0] + x, self.pos_buffer[1] + y)
+        return
+
+    def move_pointer_pos_worker(self):
+        while True:
+            x, y = self.pos_buffer
+            self.pos_buffer = (0.0, 0.0)
+            self.move_pointer_pos(x, y, relative=True)
+            time.sleep(self.frame_time)
         return
 
     def scroll_wheel(self, distance):
@@ -216,10 +230,10 @@ class ActionHandler:
         self.func_wdecel = (lambda l, _: max(0.0, l - 5.43 * _))
         self.wheel_scale = 1579.3
         # Lists
-        # enabled: current status, True if pressed down
-        # time: when did the current status started
-        # combo: current combo
-        # combo_last: last combo achieved before state change
+        #   enabled: current status, True if pressed down
+        #   time: when did the current status started
+        #   combo: current combo
+        #   combo_last: last combo achieved before state change
         self.vec_enabled = dict((i, False) for i in self.move_speed)
         self.vec_time = dict((i, 0.0) for i in self.move_speed)
         self.vec_combo = dict((i, 0.0) for i in self.move_speed)
@@ -230,6 +244,8 @@ class ActionHandler:
         self.wheel_combo_last = dict((i, 0.0) for i in self.scroll_speed)
         # Mouse emulator
         self.emulator = emulator
+        # Time related
+        self.last_frame_time = 0.0
         return
 
     def callback(self, action, state):
@@ -249,6 +265,9 @@ class ActionHandler:
 
     def render_frame(self):
         cur_time = time.time()
+        frame_time = (self.emulator.frame_time if self.last_frame_time == 0.0
+                      else cur_time - self.last_frame_time)
+        self.last_frame_time = cur_time
         # Process cursor position
         vec = Vector(0, 0)
         for action in self.move_speed:
@@ -262,8 +281,8 @@ class ActionHandler:
             vec = vec + self.move_speed[action] * combo
             self.vec_combo[action] = combo
         vec *= self.vec_scale
-        vec *= self.emulator.frame_time
-        self.emulator.move_pointer_pos(vec.x, vec.y, relative=True)
+        vec *= frame_time
+        self.emulator.move_pointer_pos_async(vec.x, vec.y)
         # Process wheel status
         wheel = 0.0
         for action in self.scroll_speed:
@@ -300,10 +319,15 @@ def main():
             time.sleep(mouse_emulator.frame_time)  # 240fps
         return
 
-    render_thread = threading.Thread(target=render_frame,
-                                     args=[action_handler, mouse_emulator])
+    render_thread = threading.Thread(
+        target=render_frame, args=[action_handler, mouse_emulator])
+    mouse_pos_thread = threading.Thread(
+        target=mouse_emulator.move_pointer_pos_worker, args=[])
     render_thread.start()
+    mouse_pos_thread.start()
     pythoncom.PumpMessages()
+    render_thread.join()
+    mouse_pos_thread.join()
     return
 
 
