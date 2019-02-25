@@ -68,6 +68,7 @@ class MouseEmulator:
     def __init__(self):
         self.x, self.y = self.get_pointer_pos()
         self.pos_buffer = (0.0, 0.0)  # Move buffer
+        self.wheel_buffer = 0.0  # Wheel buffer
         self.frame_rate = 432  # Frames per second
         self.frame_time = 1.0 / self.frame_rate  # Time per frame
         return
@@ -112,16 +113,24 @@ class MouseEmulator:
         self.pos_buffer = (self.pos_buffer[0] + x, self.pos_buffer[1] + y)
         return
 
-    def move_pointer_pos_worker(self):
+    def scroll_wheel(self, distance):
+        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, int(distance))
+        return
+
+    def scroll_wheel_async(self, distance):
+        self.wheel_buffer += distance
+        return
+
+    def emulator_worker(self):
         while True:
             x, y = self.pos_buffer
             self.pos_buffer = (0.0, 0.0)
             self.move_pointer_pos(x, y, relative=True)
+            w = self.wheel_buffer
+            self.wheel_buffer = 0.0
+            self.scroll_wheel(w)
             time.sleep(self.frame_time)
         return
-
-    def scroll_wheel(self, distance):
-        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, int(distance))
     pass
 
 
@@ -278,7 +287,7 @@ class ActionHandler:
                       else cur_time - self.last_frame_time)
         self.last_frame_time = cur_time
         # Process cursor position
-        vec = Vector(0, 0)
+        vec = Vector(0.0, 0.0)
         for action in self.move_speed:
             delta_tm = cur_time - self.vec_time[action]
             combo = 0.0
@@ -311,13 +320,13 @@ class ActionHandler:
         if self.speed_switch:
             wheel *= self.wheel_switch_scale
         wheel *= self.emulator.frame_time
-        self.emulator.scroll_wheel(wheel)
+        self.emulator.scroll_wheel_async(wheel)
         return
     pass
 
 
 def main():
-    print('izuna Pointing Device Driver / 1.01')
+    print('izuna Pointing Device Driver / 1.02')
     print('========================================')
     print('Author: jeffswt')
     print('Usage:  See README.md')
@@ -329,13 +338,13 @@ def main():
     def render_frame(action_handler, mouse_emulator):
         while True:
             action_handler.render_frame()
-            time.sleep(mouse_emulator.frame_time)  # 240fps
+            time.sleep(mouse_emulator.frame_time)
         return
 
     render_thread = threading.Thread(
         target=render_frame, args=[action_handler, mouse_emulator])
     mouse_pos_thread = threading.Thread(
-        target=mouse_emulator.move_pointer_pos_worker, args=[])
+        target=mouse_emulator.emulator_worker, args=[])
     render_thread.start()
     mouse_pos_thread.start()
     pythoncom.PumpMessages()
