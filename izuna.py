@@ -98,8 +98,6 @@ class MouseEmulator:
         return x, y
 
     def move_pointer_pos(self, x, y, relative=False):
-        # TODO: float available?
-        # TODO: relative param not implemented
         _x, _y = self.get_pointer_pos(self.x, self.y)  # Previous state
         if relative:
             x, y = _x + x, _y - y
@@ -211,12 +209,11 @@ class ActionHandler:
         # Acceleration functions
         self.func_accel = (lambda _: math.log(_ + 1, 1.08) ** 0.56 * 0.358)
         self.func_accel_r = (lambda _: 1.08 ** ((_ / 0.362) ** (1 / 0.56)) - 1)
-        # self.func_decel = (lambda l, _: 0.0 if _ >= l / 1.37 else
-        #                    (_ - l / 1.37) ** 2 * 1.37 / l)
-        # self.func_decel = (lambda l, _: 0.0 if _ >= math.sqrt(l) / 6.51 else
-        #                    (_ * 6.51 - math.sqrt(l)) ** 2)
         self.func_decel = (lambda l, _: max(0.0, l - 7.9 * _))
         self.vec_scale = 616.1616
+        self.func_waccel = (lambda _: math.sqrt(_ * 1.8) * 1.3)
+        self.func_waccel_r = (lambda _: (_ / 1.3) ** 2 / 1.8)
+        self.func_wdecel = (lambda l, _: max(0.0, l - 5.43 * _))
         self.wheel_scale = 1579.3
         # Lists
         # enabled: current status, True if pressed down
@@ -236,7 +233,6 @@ class ActionHandler:
         return
 
     def callback(self, action, state):
-        print(action, state)
         if action in self.move_speed:
             if self.vec_enabled[action] != state:
                 self.vec_combo_last[action] = self.vec_combo[action]
@@ -274,12 +270,13 @@ class ActionHandler:
             delta_tm = cur_time - self.wheel_time[action]
             combo = 0.0
             if self.wheel_enabled[action]:
-                last_tm = self.func_accel_r(self.wheel_combo_last[action])
-                combo = self.func_accel(last_tm + delta_tm)
+                last_tm = self.func_waccel_r(self.wheel_combo_last[action])
+                combo = self.func_waccel(last_tm + delta_tm)
             else:
-                combo = self.func_decel(self.wheel_combo_last[action],
-                                        delta_tm)
+                combo = self.func_wdecel(self.wheel_combo_last[action],
+                                         delta_tm)
             wheel = wheel + self.scroll_speed[action] * combo
+            self.wheel_combo[action] = combo
         wheel *= self.wheel_scale
         wheel *= self.emulator.frame_time
         self.emulator.scroll_wheel(wheel)
