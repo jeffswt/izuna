@@ -260,7 +260,6 @@ class ActionHandler:
         # Mouse emulator
         self.emulator = emulator
         # Time related
-        self.last_frame_time = 0.0
         self.speed_switch = False
         return
 
@@ -281,11 +280,7 @@ class ActionHandler:
             self.speed_switch = state
         return
 
-    def render_frame(self):
-        cur_time = time.time()
-        frame_time = (self.emulator.frame_time if self.last_frame_time == 0.0
-                      else cur_time - self.last_frame_time)
-        self.last_frame_time = cur_time
+    def render_frame(self, cur_time, frame_time):
         # Process cursor position
         vec = Vector(0.0, 0.0)
         for action in self.move_speed:
@@ -319,7 +314,7 @@ class ActionHandler:
         wheel *= self.wheel_scale
         if self.speed_switch:
             wheel *= self.wheel_switch_scale
-        wheel *= self.emulator.frame_time
+        wheel *= frame_time
         self.emulator.scroll_wheel_async(wheel)
         return
     pass
@@ -336,8 +331,12 @@ def main():
     key_state_monitor.load_hook()
 
     def render_frame(action_handler, mouse_emulator):
+        prev_time = time.time()
         while True:
-            action_handler.render_frame()
+            cur_time = time.time()
+            frame_time = cur_time - prev_time
+            prev_time = cur_time
+            action_handler.render_frame(cur_time, frame_time)
             time.sleep(mouse_emulator.frame_time)
         return
 
