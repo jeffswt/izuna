@@ -3,7 +3,7 @@
 
 A <del>fake</del> mouse driver for everyone without a mouse but a keypad.
 
-![](images/izuna.jpg)
+![](assets/izuna.jpg)
 
 This program allows you to control the system cursor via a keyboard. Most
 functions on the mouse are replicated by this driver in an apparent way.
