@@ -31,13 +31,15 @@ The keys and their corresponding functions are as following:
 | Numpad 7     | move / upper-left                        |
 | Numpad 8     | move / upper                             |
 | Numpad 9     | move / upper-right                       |
-| Numpad 0     | left click (holdable)                    |
-| Numpad Enter | left click (holdable)                    |
-| Numpad 5     | brake while cursor is moving, left click (holdable) while static |
-| Numpad +     | right click                              |
-| Numpad /     | middle click                             |
+| Numpad 5     | left mouse button                        |
+| Numpad Enter | left mouse button                        |
+| Numpad 0     | left mouse button                        |
+| Numpad Del   | left mouse button                        |
+| Numpad +     | right mouse button                       |
+| Numpad /     | middle mouse button                      |
 | Numpad *     | scroll up                                |
 | Numpad -     | scroll down                              |
+| Left Alt     | slow down pointer and speed up scrolling |
 | Num Lock     | *izuna* is disabled while num lock is on, vice versa |
 
 ## Known Issues
