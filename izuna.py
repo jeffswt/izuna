@@ -68,7 +68,7 @@ class MouseEmulator:
     def __init__(self):
         self.x, self.y = self.get_pointer_pos()
         self.pos_buffer = (0.0, 0.0)  # Move buffer
-        self.frame_rate = 288  # Frames per second
+        self.frame_rate = 432  # Frames per second
         self.frame_time = 1.0 / self.frame_rate  # Time per frame
         return
 
@@ -130,21 +130,24 @@ class KeyStateMonitor:
     def __init__(self, action_handler=None):
         self.rules = [
             # Key Name, Triggered Action, Virtual Key ID
-            ('7', 'move-upper-left', (36, 0)),
-            ('4', 'move-left', (37, 0)),
-            ('1', 'move-lower-left', (35, 0)),
-            ('2', 'move-down', (40, 0)),
-            ('3', 'move-lower-right', (34, 0)),
-            ('6', 'move-right', (39, 0)),
-            ('9', 'move-upper-right', (33, 0)),
-            ('8', 'move-up', (38, 0)),
-            ('5', 'left-click', (12, 0)),
-            ('\n', 'left-click', (13, 1)),
-            ('0', 'left-click', (45, 0)),
-            ('+', 'right-click', (107, 0)),
-            ('/', 'middle-click', (111, 1)),
-            ('*', 'wheel-scroll-up', (106, 0)),
-            ('-', 'wheel-scroll-down', (109, 0)),
+            # Prepend '$' on key name to disable blocking
+            ('num-7', 'move-upper-left', (36, 0)),
+            ('num-4', 'move-left', (37, 0)),
+            ('num-1', 'move-lower-left', (35, 0)),
+            ('num-2', 'move-down', (40, 0)),
+            ('num-3', 'move-lower-right', (34, 0)),
+            ('num-6', 'move-right', (39, 0)),
+            ('num-9', 'move-upper-right', (33, 0)),
+            ('num-8', 'move-up', (38, 0)),
+            ('num-5', 'left-click', (12, 0)),
+            ('num-enter', 'left-click', (13, 1)),
+            ('num-0', 'left-click', (45, 0)),
+            ('num-del', 'left-click', (46, 0)),
+            ('num-plus', 'right-click', (107, 0)),
+            ('num-slash', 'middle-click', (111, 1)),
+            ('num-asterisk', 'wheel-scroll-up', (106, 0)),
+            ('num-hyphen', 'wheel-scroll-down', (109, 0)),
+            ('$left-alt', 'speed-switch', (164, 0))
         ]
         # Generate indices
         self.index_ids = set(i[2] for i in self.rules)
@@ -178,7 +181,8 @@ class KeyStateMonitor:
         if do_callback:
             if self.action_callback is not None:
                 self.action_callback.callback(action, state)
-        return False
+        # Keys with '$' prefix would not be blocked
+        return key[0] == '$'
 
     def load_hook(self):
         hm = pyHook.HookManager()
@@ -224,11 +228,13 @@ class ActionHandler:
         self.func_accel = (lambda _: math.log(_ + 1, 1.08) ** 0.56 * 0.358)
         self.func_accel_r = (lambda _: 1.08 ** ((_ / 0.362) ** (1 / 0.56)) - 1)
         self.func_decel = (lambda l, _: max(0.0, l - 7.9 * _))
-        self.vec_scale = 616.1616
+        self.vec_scale = 404.200
+        self.vec_switch_scale = 0.297
         self.func_waccel = (lambda _: math.sqrt(_ * 1.8) * 1.3)
         self.func_waccel_r = (lambda _: (_ / 1.3) ** 2 / 1.8)
         self.func_wdecel = (lambda l, _: max(0.0, l - 5.43 * _))
         self.wheel_scale = 1579.3
+        self.wheel_switch_scale = 2.11
         # Lists
         #   enabled: current status, True if pressed down
         #   time: when did the current status started
@@ -246,6 +252,7 @@ class ActionHandler:
         self.emulator = emulator
         # Time related
         self.last_frame_time = 0.0
+        self.speed_switch = False
         return
 
     def callback(self, action, state):
@@ -261,6 +268,8 @@ class ActionHandler:
             self.wheel_time[action] = time.time()
         elif action in self.keys:
             self.emulator.change_key_state(self.keys[action], state)
+        elif action == 'speed-switch':
+            self.speed_switch = state
         return
 
     def render_frame(self):
@@ -281,6 +290,8 @@ class ActionHandler:
             vec = vec + self.move_speed[action] * combo
             self.vec_combo[action] = combo
         vec *= self.vec_scale
+        if self.speed_switch:
+            vec *= self.vec_switch_scale
         vec *= frame_time
         self.emulator.move_pointer_pos_async(vec.x, vec.y)
         # Process wheel status
@@ -297,6 +308,8 @@ class ActionHandler:
             wheel = wheel + self.scroll_speed[action] * combo
             self.wheel_combo[action] = combo
         wheel *= self.wheel_scale
+        if self.speed_switch:
+            wheel *= self.wheel_switch_scale
         wheel *= self.emulator.frame_time
         self.emulator.scroll_wheel(wheel)
         return
