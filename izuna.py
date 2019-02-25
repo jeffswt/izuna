@@ -285,6 +285,10 @@ class ActionHandler:
 
 
 def main():
+    print('izuna Pointing Device Driver / 1.01')
+    print('========================================')
+    print('Author: jeffswt')
+    print('Usage:  See README.md')
     mouse_emulator = MouseEmulator()
     action_handler = ActionHandler(emulator=mouse_emulator)
     key_state_monitor = KeyStateMonitor(action_handler=action_handler)
