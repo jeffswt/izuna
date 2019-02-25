@@ -67,7 +67,7 @@ class MouseEmulator:
     """Emulates mouse actions."""
     def __init__(self):
         self.x, self.y = self.get_pointer_pos()
-        self.frame_rate = 120  # Frames per second
+        self.frame_rate = 432  # Frames per second
         self.frame_time = 1.0 / self.frame_rate  # Time per frame
         return
 
@@ -85,22 +85,27 @@ class MouseEmulator:
         win32api.mouse_event(mapping[(key, state)], 0, 0, 0, 0)
         return True
 
-    def get_pointer_pos(self):
+    def get_pointer_pos(self, x=0, y=0):
         class POINT(Structure):
-            _fields_ = [("x", c_ulong),("y", c_ulong)]
+            _fields_ = [("x", c_ulong), ("y", c_ulong)]
         po = POINT()
         windll.user32.GetCursorPos(byref(po))
-        return int(po.x), int(po.y)
+        nx, ny = int(po.x), int(po.y)
+        if nx != math.floor(x) and nx != math.ceil(x):
+            x = nx
+        if ny != math.floor(y) and ny != math.floor(y):
+            y = ny
+        return x, y
 
     def move_pointer_pos(self, x, y, relative=False):
         # TODO: float available?
         # TODO: relative param not implemented
+        _x, _y = self.get_pointer_pos(self.x, self.y)  # Previous state
         if relative:
-            # _x, _y = self.get_pointer_pos()
-            _x, _y = self.x, self.y
             x, y = _x + x, _y - y
             self.x, self.y = x, y
-        windll.user32.SetCursorPos(int(x), int(y))
+        if (int(x), int(y)) != (int(_x), int(_y)):
+            windll.user32.SetCursorPos(int(x), int(y))
         return
 
     def scroll_wheel(self, distance):
@@ -206,12 +211,13 @@ class ActionHandler:
         # Acceleration functions
         self.func_accel = (lambda _: math.log(_ + 1, 1.08) ** 0.56 * 0.358)
         self.func_accel_r = (lambda _: 1.08 ** ((_ / 0.362) ** (1 / 0.56)) - 1)
-        self.func_decel = (lambda l, _: 0.0 if _ >= l / 1.37 else
-                           (_ - l / 1.37) ** 2 * 1.37 / l)
-        self.func_decel = (lambda l, _: 0.0 if _ >= math.sqrt(l) / 4.51 else
-                           (_ * 4.51 - math.sqrt(l)) ** 2)
-        self.vec_scale = 516.7569  # Steins;Gate
-        self.wheel_scale = 1234.56
+        # self.func_decel = (lambda l, _: 0.0 if _ >= l / 1.37 else
+        #                    (_ - l / 1.37) ** 2 * 1.37 / l)
+        # self.func_decel = (lambda l, _: 0.0 if _ >= math.sqrt(l) / 6.51 else
+        #                    (_ * 6.51 - math.sqrt(l)) ** 2)
+        self.func_decel = (lambda l, _: max(0.0, l - 7.9 * _))
+        self.vec_scale = 616.1616
+        self.wheel_scale = 1579.3
         # Lists
         # enabled: current status, True if pressed down
         # time: when did the current status started
