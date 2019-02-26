@@ -238,12 +238,14 @@ class ActionHandler:
             'middle-click': 'middle',
         }
         # Acceleration functions
-        self.func_accel = (lambda _: math.log(_ + 1, 1.08) ** 0.56 * 0.358)
-        self.func_accel_r = (lambda _: 1.08 ** ((_ / 0.362) ** (1 / 0.56)) - 1)
+        self.func_accel = (lambda _: math.log(max(_, 0.0) + 1, 1.08) **
+                           0.56 * 0.358)
+        self.func_accel_r = (lambda _: 1.08 ** ((max(_, 0.0) / 0.362) **
+                             (1 / 0.56)) - 1)
         self.func_decel = (lambda l, _: max(0.0, l - 7.9 * _))
         self.vec_scale = 404.200
         self.vec_switch_scale = 0.297
-        self.func_waccel = (lambda _: math.sqrt(_ * 1.8) * 1.3)
+        self.func_waccel = (lambda _: math.sqrt(max(_, 0.0) * 1.8) * 1.3)
         self.func_waccel_r = (lambda _: (_ / 1.3) ** 2 / 1.8)
         self.func_wdecel = (lambda l, _: max(0.0, l - 5.43 * _))
         self.wheel_scale = 1579.3
@@ -325,7 +327,7 @@ class ActionHandler:
 
 
 def main():
-    print('izuna Pointing Device Driver / 1.03')
+    print('izuna Pointing Device Driver / 1.04')
     print('========================================')
     print('Author: jeffswt')
     print('Usage:  See README.md')
@@ -340,7 +342,10 @@ def main():
             cur_time = time.time()
             frame_time = cur_time - prev_time
             prev_time = cur_time
-            action_handler.render_frame(cur_time, frame_time)
+            try:
+                action_handler.render_frame(cur_time, frame_time)
+            except Exception as err:
+                print(''.join(traceback.format_exception(*sys.exc_info)))
             time.sleep(mouse_emulator.frame_time)
         return
 
