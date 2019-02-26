@@ -247,7 +247,7 @@ class ActionHandler:
         self.func_waccel_r = (lambda _: (_ / 1.3) ** 2 / 1.8)
         self.func_wdecel = (lambda l, _: max(0.0, l - 5.43 * _))
         self.wheel_scale = 1579.3
-        self.wheel_switch_scale = 2.11
+        self.wheel_switch_scale = 0.38
         # Lists
         #   enabled: current status, True if pressed down
         #   time: when did the current status started
