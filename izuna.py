@@ -99,7 +99,7 @@ class MouseEmulator:
             y = ny
         return x, y
 
-    def move_pointer_pos(self, x, y, relative=False):
+    def move_pointer_pos(self, x, y, relative=True):
         _x, _y = self.get_pointer_pos(self.x, self.y)  # Previous state
         if relative:
             x, y = _x + x, _y - y
@@ -114,7 +114,9 @@ class MouseEmulator:
         return
 
     def scroll_wheel(self, distance):
-        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, int(distance))
+        if distance != 0.0:
+            win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0,
+                                 int(distance))
         return
 
     def scroll_wheel_async(self, distance):
@@ -124,12 +126,14 @@ class MouseEmulator:
     def emulator_worker(self):
         while True:
             x, y = self.pos_buffer
-            self.pos_buffer = (0.0, 0.0)
-            self.move_pointer_pos(x, y, relative=True)
+            if (x, y) != (0.0, 0.0):
+                self.pos_buffer = (0.0, 0.0)
+                self.move_pointer_pos(x, y, relative=True)
             w = self.wheel_buffer
-            self.wheel_buffer = 0.0
-            self.scroll_wheel(w)
-            time.sleep(self.frame_time)
+            if w != 0.0:
+                self.wheel_buffer = 0.0
+                self.scroll_wheel(w)
+            time.sleep(1.0 / 60)
         return
     pass
 
@@ -297,7 +301,7 @@ class ActionHandler:
         if self.speed_switch:
             vec *= self.vec_switch_scale
         vec *= frame_time
-        self.emulator.move_pointer_pos_async(vec.x, vec.y)
+        self.emulator.move_pointer_pos(vec.x, vec.y, relative=True)
         # Process wheel status
         wheel = 0.0
         for action in self.scroll_speed:
@@ -315,13 +319,13 @@ class ActionHandler:
         if self.speed_switch:
             wheel *= self.wheel_switch_scale
         wheel *= frame_time
-        self.emulator.scroll_wheel_async(wheel)
+        self.emulator.scroll_wheel(wheel)
         return
     pass
 
 
 def main():
-    print('izuna Pointing Device Driver / 1.02')
+    print('izuna Pointing Device Driver / 1.03')
     print('========================================')
     print('Author: jeffswt')
     print('Usage:  See README.md')
@@ -342,13 +346,13 @@ def main():
 
     render_thread = threading.Thread(
         target=render_frame, args=[action_handler, mouse_emulator])
-    mouse_pos_thread = threading.Thread(
-        target=mouse_emulator.emulator_worker, args=[])
+    # mouse_pos_thread = threading.Thread(
+    #     target=mouse_emulator.emulator_worker, args=[])
     render_thread.start()
-    mouse_pos_thread.start()
+    # mouse_pos_thread.start()
     pythoncom.PumpMessages()
     render_thread.join()
-    mouse_pos_thread.join()
+    # mouse_pos_thread.join()
     return
 
 
