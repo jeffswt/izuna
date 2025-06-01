@@ -1,0 +1,22 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": [
+    "**/__pycache__"
+  ],
+  "allowCompoundWords": true,
+  "dictionaries": [
+    "python",
+    "filetypes",
+    "softwareTerms",
+    "misc"
+  ],
+  "words": [
+    "izuna",
+    "LCONTROL",
+    "LMENU",
+    "MOUSEEVENTF",
+    "RCONTROL"
+  ],
+  "flagWords": []
+}
