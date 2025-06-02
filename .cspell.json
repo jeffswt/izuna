@@ -12,11 +12,15 @@
     "misc"
   ],
   "words": [
+    "CALLWNDPROCRET",
     "izuna",
+    "KBDLLHOOKSTRUCT",
+    "KEYUP",
     "LCONTROL",
     "LMENU",
     "MOUSEEVENTF",
-    "RCONTROL"
+    "RCONTROL",
+    "SYSKEYUP"
   ],
   "flagWords": []
 }

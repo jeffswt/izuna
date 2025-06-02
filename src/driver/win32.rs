@@ -1,29 +1,58 @@
+use std::sync::{Arc, Mutex};
+
+use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    self, GetKeyState, SendInput, INPUT, INPUT_0, MOUSEEVENTF_MOVE, MOUSEINPUT, VIRTUAL_KEY,
+    self, GetKeyState, SendInput, INPUT, INPUT_0, MOUSEINPUT, VIRTUAL_KEY,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    self, CallNextHookEx, SetWindowsHookExA, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
+    WM_SYSKEYUP,
 };
 
 use super::{IzunaDriver, Key, MouseButton};
 
 pub struct Win32IzunaDriver<State> {
-    state: State,
-    hooks: Vec<Box<dyn FnMut(&mut State, Key) -> Option<Key>>>,
+    state: Arc<Mutex<State>>,
 }
 
-impl<State> IzunaDriver<State> for Win32IzunaDriver<State> {
+static GLOBAL_HOOKS: Mutex<Vec<Box<dyn Send + Sync + Fn(Key, bool) -> Option<Key>>>> =
+    Mutex::new(Vec::new());
+
+impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State> {
     fn create(state: State) -> Self {
-        Win32IzunaDriver {
-            state: state,
-            hooks: vec![],
+        let driver = Win32IzunaDriver {
+            state: Arc::new(Mutex::new(state)),
+        };
+        unsafe {
+            // Set a low-level keyboard hook.
+            SetWindowsHookExA(
+                WindowsAndMessaging::WH_KEYBOARD_LL,
+                Some(_hook_func),
+                None, // hMod: handle to the DLL containing the hook procedure
+                0,    // dwThreadId: thread ID for the hook
+            );
+        }
+        driver
+    }
+
+    fn add_key_hook(
+        &mut self,
+        mut hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<Key>>,
+    ) -> () {
+        let state_clone = self.state.clone();
+        let wrapped = move |key, is_down| {
+            if let Ok(mut state) = state_clone.lock() {
+                hook(&mut state, key, is_down)
+            } else {
+                eprintln!("hook: failed to lock state");
+                None
+            }
+        };
+        if let Ok(mut hooks) = GLOBAL_HOOKS.lock() {
+            hooks.push(Box::new(wrapped));
         }
     }
 
-    fn add_key_hook(&mut self, hook: Box<dyn FnMut(&mut State, Key) -> Option<Key>>) -> () {
-        self.hooks.push(hook);
-    }
-
-    /// Get current key state. The first return value shows whether the key is
-    /// currently pressed down, and the second indicates whether the 'toggle'
-    /// (e.g. Caps Lock) indicator light is on.
     fn get_key_state(&self, key: Key) -> (bool, bool) {
         let vk_value = _key_to_win32_vk(key);
         let state = unsafe { GetKeyState(vk_value.0.into()) } as u16;
@@ -33,12 +62,11 @@ impl<State> IzunaDriver<State> for Win32IzunaDriver<State> {
         // CAPS LOCK key, is toggled if it is turned on. The key is off and
         // un-toggled if the low-order bit is 0. A toggle key's indicator light
         // (if any) on the keyboard will be on when the key is toggled, and off
-        // when the key is untoggled.
+        // when the key is un-toggled.
         let is_toggled = state & 0x0001 != 0;
         (is_down, is_toggled)
     }
 
-    /// Set the mouse button state.
     fn set_mouse_button(&self, button: MouseButton, down: bool) -> () {
         _send_mouse_event(
             "set_mouse_button",
@@ -56,7 +84,6 @@ impl<State> IzunaDriver<State> for Win32IzunaDriver<State> {
         );
     }
 
-    /// Move the mouse by the given delta x and y values.
     fn move_mouse_pointer(&self, dx: i32, dy: i32) -> () {
         _send_mouse_event(
             "move_mouse_pointer",
@@ -71,8 +98,7 @@ impl<State> IzunaDriver<State> for Win32IzunaDriver<State> {
         );
     }
 
-    /// Move the scroll position by the given delta x and y values.
-    fn move_mouse_wheel(&self, dx: i32) -> () {
+    fn move_mouse_wheel(&self, dy: i32) -> () {
         _send_mouse_event(
             "move_mouse_wheel",
             MOUSEINPUT {
@@ -83,10 +109,56 @@ impl<State> IzunaDriver<State> for Win32IzunaDriver<State> {
                 // backward, toward the user. One wheel click is defined as
                 // WHEEL_DELTA, which is 120.
                 dwFlags: KeyboardAndMouse::MOUSEEVENTF_WHEEL,
-                mouseData: dx as u32,
+                mouseData: dy as u32,
                 ..Default::default()
             },
         );
+    }
+}
+
+#[allow(non_snake_case)]
+unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+    // convert to key value
+    let key_down = match wParam.0 as u32 {
+        WM_KEYDOWN | WM_SYSKEYDOWN => Some(true),
+        WM_KEYUP | WM_SYSKEYUP => Some(false),
+        _ => None,
+    };
+    let kb_dll_hook = lParam.0 as *const KBDLLHOOKSTRUCT;
+    let key = kb_dll_hook
+        .as_ref()
+        .map(|hook| hook.vkCode)
+        .map(|vk| VIRTUAL_KEY(vk as u16))
+        .map(_key_from_win32_vk)
+        .unwrap_or(None);
+
+    let forward = if let (Some(key_down), Some(key)) = (key_down, key) {
+        let mut key = Some(key);
+        // call every hook in hooks registered
+        if let Ok(global_hooks) = GLOBAL_HOOKS.lock() {
+            for hook in global_hooks.iter() {
+                if let Some(k) = key {
+                    key = hook(k, key_down);
+                }
+            }
+        }
+        key.is_some()
+    } else {
+        true
+    };
+
+    if nCode < 0 || forward {
+        // If nCode is less than zero, the hook procedure must return the value
+        // returned by CallNextHookEx function.
+        // If nCode is greater than or equal to zero, it is highly recommended
+        // that you call CallNextHookEx function and return the value it
+        // returns; otherwise, other applications that have installed
+        // WH_CALLWNDPROCRET hooks will not receive hook notifications and may
+        // behave incorrectly as a result. If the hook procedure does not call
+        // CallNextHookEx, the return value should be zero.
+        unsafe { CallNextHookEx(None, nCode, wParam, lParam) }
+    } else {
+        LRESULT(0)
     }
 }
 
