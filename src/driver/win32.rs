@@ -1,12 +1,19 @@
+use std::mem;
+use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
+use std::thread::spawn;
 
-use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows::core::{s, w};
+use windows::Win32::Foundation::{HINSTANCE, HMODULE, LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::LibraryLoader::{
+    self, GetModuleHandleExW, GetModuleHandleW, LoadLibraryExW, LoadLibraryW,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     self, GetKeyState, SendInput, INPUT, INPUT_0, MOUSEINPUT, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    self, CallNextHookEx, SetWindowsHookExA, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
-    WM_SYSKEYUP,
+    self, CallNextHookEx, SetWindowsHookExW, HHOOK, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_KEYUP,
+    WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 use super::{IzunaDriver, Key, MouseButton};
@@ -15,29 +22,48 @@ pub struct Win32IzunaDriver<State> {
     state: Arc<Mutex<State>>,
 }
 
-static GLOBAL_HOOKS: Mutex<Vec<Box<dyn Send + Sync + Fn(Key, bool) -> Option<Key>>>> =
+static GLOBAL_HOOKS: Mutex<Vec<Box<dyn Send + Sync + Fn(Key, bool) -> Option<()>>>> =
     Mutex::new(Vec::new());
+static GLOBAL_HOOKED: Mutex<Option<usize>> = Mutex::new(None);
 
 impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State> {
     fn create(state: State) -> Self {
-        let driver = Win32IzunaDriver {
-            state: Arc::new(Mutex::new(state)),
-        };
-        unsafe {
-            // Set a low-level keyboard hook.
-            SetWindowsHookExA(
-                WindowsAndMessaging::WH_KEYBOARD_LL,
-                Some(_hook_func),
-                None, // hMod: handle to the DLL containing the hook procedure
-                0,    // dwThreadId: thread ID for the hook
-            );
+        {
+            let mut guard = GLOBAL_HOOKED.lock().unwrap();
+            if guard.is_some() {
+                panic!("[win32] only 1 instance of Win32IzunaDriver can be created at a time");
+            }
+            let h_mod = unsafe { GetModuleHandleW(None).unwrap() };
+            let h_hook = unsafe {
+                SetWindowsHookExW(
+                    WindowsAndMessaging::WH_KEYBOARD_LL,
+                    Some(_hook_func),
+                    Some(HINSTANCE(h_mod.0)),
+                    0, // dwThreadId: thread ID for the hook
+                )
+                .unwrap()
+            };
+            *guard = Some(h_hook.0 as usize);
         }
-        driver
+        Win32IzunaDriver {
+            state: Arc::new(Mutex::new(state)),
+        }
+    }
+
+    fn run_message_loop(&mut self) -> () {
+        loop {
+            let mut msg = WindowsAndMessaging::MSG::default();
+            let msg = unsafe { WindowsAndMessaging::GetMessageW(&mut msg, None, 0, 0) };
+            if msg.0 != 0 {
+                eprintln!("[win32] GetMessageW failed: {:?}", msg);
+                break;
+            }
+        }
     }
 
     fn add_key_hook(
         &mut self,
-        mut hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<Key>>,
+        mut hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
     ) -> () {
         let state_clone = self.state.clone();
         let wrapped = move |key, is_down| {
@@ -116,7 +142,18 @@ impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State
     }
 }
 
+impl<State> Drop for Win32IzunaDriver<State> {
+    fn drop(&mut self) {
+        if let Some(h_hook) = GLOBAL_HOOKED.lock().unwrap().take() {
+            eprintln!("[win32] removing global key hook {h_hook}");
+            let h_hook = HHOOK(h_hook as _);
+            unsafe { WindowsAndMessaging::UnhookWindowsHookEx(h_hook).unwrap() }
+        }
+    }
+}
+
 #[allow(non_snake_case)]
+#[no_mangle]
 unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     // convert to key value
     let key_down = match wParam.0 as u32 {
@@ -131,14 +168,13 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
         .map(|vk| VIRTUAL_KEY(vk as u16))
         .map(_key_from_win32_vk)
         .unwrap_or(None);
-
     let forward = if let (Some(key_down), Some(key)) = (key_down, key) {
         let mut key = Some(key);
         // call every hook in hooks registered
         if let Ok(global_hooks) = GLOBAL_HOOKS.lock() {
             for hook in global_hooks.iter() {
                 if let Some(k) = key {
-                    key = hook(k, key_down);
+                    key = hook(k, key_down).map(|_| k);
                 }
             }
         }
@@ -147,7 +183,16 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
         true
     };
 
+    // println!("hooking {key_down:?} {key:?} {nCode} {forward}");
+    // return CallNextHookEx(None, nCode, wParam, lParam);
+
     if nCode < 0 || forward {
+        let h_hook = GLOBAL_HOOKED
+            .lock()
+            .inspect_err(|e| eprintln!("hok err {e:?}"))
+            .unwrap()
+            .as_ref()
+            .map(|h| HHOOK(*h as _));
         // If nCode is less than zero, the hook procedure must return the value
         // returned by CallNextHookEx function.
         // If nCode is greater than or equal to zero, it is highly recommended
@@ -156,7 +201,7 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
         // WH_CALLWNDPROCRET hooks will not receive hook notifications and may
         // behave incorrectly as a result. If the hook procedure does not call
         // CallNextHookEx, the return value should be zero.
-        unsafe { CallNextHookEx(None, nCode, wParam, lParam) }
+        CallNextHookEx(None, nCode, wParam, lParam)
     } else {
         LRESULT(0)
     }

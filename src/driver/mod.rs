@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 pub mod win32;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
     // modifiers
     LeftCtrl,
@@ -35,6 +36,7 @@ pub enum Key {
     NumpadSlash,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MouseButton {
     Left,
     Middle,
@@ -47,15 +49,19 @@ pub trait IzunaDriver<State: 'static + Send + Sync> {
     /// Initializes the driver with the given state.
     fn create(state: State) -> Self;
 
+    /// Run message loop on main thread. Additional logic should be executed in
+    /// a background thread.
+    fn run_message_loop(&mut self) -> ();
+
     /// Listen to key updates and updates the state accordingly. If a hook
     /// existed previously, the new hook will be called prior the the previous
     /// ones. Hooks are global.
     ///
-    /// The hook should return a key code if it should be propagated to the
-    /// next layer, or `None` if it is handled and consumed.
+    /// The hook should return a `Some` if it should be propagated to the next
+    /// waiting hook, or `None` if it is handled and consumed.
     fn add_key_hook(
         &mut self,
-        hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<Key>>,
+        hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
     ) -> ();
 
     /// Get current key state. The first return value shows whether the key is
