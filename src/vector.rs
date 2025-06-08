@@ -68,11 +68,11 @@ impl Mul<f64> for Vector {
     }
 }
 
-impl Mul<Vector> for Vector {
-    type Output = f64;
+impl Mul<i8> for Vector {
+    type Output = Vector;
 
-    fn mul(self, other: Vector) -> f64 {
-        self.x * other.x + self.y * other.y
+    fn mul(self, other: i8) -> Vector {
+        Vector::new(self.x * (other as f64), self.y * (other as f64))
     }
 }
 

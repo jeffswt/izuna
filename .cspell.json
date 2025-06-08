@@ -17,6 +17,7 @@
     "KBDLLHOOKSTRUCT",
     "KEYUP",
     "LCONTROL",
+    "libizuna",
     "LMENU",
     "MOUSEEVENTF",
     "RCONTROL",

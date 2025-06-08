@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub mod win32;
 
@@ -47,11 +47,7 @@ pub enum MouseButton {
 /// separate integrations with different OSes.
 pub trait IzunaDriver<State: 'static + Send + Sync> {
     /// Initializes the driver with the given state.
-    fn create(state: State) -> Self;
-
-    /// Run message loop on main thread. Additional logic should be executed in
-    /// a background thread.
-    fn run_message_loop(&mut self) -> ();
+    fn create(state: Arc<Mutex<State>>) -> Self;
 
     /// Listen to key updates and updates the state accordingly. If a hook
     /// existed previously, the new hook will be called prior the the previous
@@ -63,6 +59,10 @@ pub trait IzunaDriver<State: 'static + Send + Sync> {
         &mut self,
         hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
     ) -> ();
+
+    /// Run message loop on main thread. Additional logic should be executed in
+    /// a background thread.
+    fn run_message_loop(&self) -> ();
 
     /// Get current key state. The first return value shows whether the key is
     /// currently pressed down, and the second indicates whether the 'toggle'

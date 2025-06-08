@@ -27,7 +27,7 @@ static GLOBAL_HOOKS: Mutex<Vec<Box<dyn Send + Sync + Fn(Key, bool) -> Option<()>
 static GLOBAL_HOOKED: Mutex<Option<usize>> = Mutex::new(None);
 
 impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State> {
-    fn create(state: State) -> Self {
+    fn create(state: Arc<Mutex<State>>) -> Self {
         {
             let mut guard = GLOBAL_HOOKED.lock().unwrap();
             if guard.is_some() {
@@ -45,12 +45,10 @@ impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State
             };
             *guard = Some(h_hook.0 as usize);
         }
-        Win32IzunaDriver {
-            state: Arc::new(Mutex::new(state)),
-        }
+        Win32IzunaDriver { state: state }
     }
 
-    fn run_message_loop(&mut self) -> () {
+    fn run_message_loop(&self) -> () {
         loop {
             let mut msg = WindowsAndMessaging::MSG::default();
             let msg = unsafe { WindowsAndMessaging::GetMessageW(&mut msg, None, 0, 0) };
@@ -111,17 +109,18 @@ impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State
     }
 
     fn move_mouse_pointer(&self, dx: i32, dy: i32) -> () {
-        _send_mouse_event(
-            "move_mouse_pointer",
-            MOUSEINPUT {
-                dwFlags: KeyboardAndMouse::MOUSEEVENTF_MOVE,
-                // Absolute data is specified as the x coordinate of the mouse;
-                // relative data is specified as the number of pixels moved.
-                dx: dx,
-                dy: dy,
-                ..Default::default()
-            },
-        );
+        println!("move {dx} {dy}");
+        // _send_mouse_event(
+        //     "move_mouse_pointer",
+        //     MOUSEINPUT {
+        //         dwFlags: KeyboardAndMouse::MOUSEEVENTF_MOVE,
+        //         // Absolute data is specified as the x coordinate of the mouse;
+        //         // relative data is specified as the number of pixels moved.
+        //         dx: dx,
+        //         dy: dy,
+        //         ..Default::default()
+        //     },
+        // );
     }
 
     fn move_mouse_wheel(&self, dy: i32) -> () {
