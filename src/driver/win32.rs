@@ -60,7 +60,7 @@ impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State
     }
 
     fn add_key_hook(
-        &mut self,
+        &self,
         mut hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
     ) -> () {
         let state_clone = self.state.clone();
@@ -109,18 +109,17 @@ impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State
     }
 
     fn move_mouse_pointer(&self, dx: i32, dy: i32) -> () {
-        println!("move {dx} {dy}");
-        // _send_mouse_event(
-        //     "move_mouse_pointer",
-        //     MOUSEINPUT {
-        //         dwFlags: KeyboardAndMouse::MOUSEEVENTF_MOVE,
-        //         // Absolute data is specified as the x coordinate of the mouse;
-        //         // relative data is specified as the number of pixels moved.
-        //         dx: dx,
-        //         dy: dy,
-        //         ..Default::default()
-        //     },
-        // );
+        _send_mouse_event(
+            "move_mouse_pointer",
+            MOUSEINPUT {
+                dwFlags: KeyboardAndMouse::MOUSEEVENTF_MOVE,
+                // Absolute data is specified as the x coordinate of the mouse;
+                // relative data is specified as the number of pixels moved.
+                dx: dx,
+                dy: -dy,
+                ..Default::default()
+            },
+        );
     }
 
     fn move_mouse_wheel(&self, dy: i32) -> () {
@@ -188,7 +187,7 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
     if nCode < 0 || forward {
         let h_hook = GLOBAL_HOOKED
             .lock()
-            .inspect_err(|e| eprintln!("hok err {e:?}"))
+            .inspect_err(|e| eprintln!("hook err {e:?}"))
             .unwrap()
             .as_ref()
             .map(|h| HHOOK(*h as _));
@@ -262,7 +261,7 @@ fn _key_from_win32_vk(vk: VIRTUAL_KEY) -> Option<Key> {
         KeyboardAndMouse::VK_NUMPAD8 => Some(Key::Numpad8),
         KeyboardAndMouse::VK_NUMPAD9 => Some(Key::Numpad9),
         KeyboardAndMouse::VK_RETURN => Some(Key::NumpadEnter),
-        KeyboardAndMouse::VK_DELETE => Some(Key::NumpadDel),
+        KeyboardAndMouse::VK_DECIMAL => Some(Key::NumpadDel),
         KeyboardAndMouse::VK_ADD => Some(Key::NumpadPlus),
         KeyboardAndMouse::VK_SUBTRACT => Some(Key::NumpadHyphen),
         KeyboardAndMouse::VK_MULTIPLY => Some(Key::NumpadAsterisk),

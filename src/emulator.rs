@@ -9,14 +9,14 @@ use crate::driver::{IzunaDriver, Key};
 use crate::vector::Vector;
 
 pub struct IzunaEmulatorState {
-    action: Arc<Mutex<IzunaAction>>,
+    action: IzunaAction,
     config: IzunaConfig,
 }
 
 impl IzunaEmulatorState {
     pub fn new(config: IzunaConfig) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(IzunaEmulatorState {
-            action: Arc::new(Mutex::new(IzunaAction::default())),
+            action: IzunaAction::default(),
             config,
         }))
     }
@@ -24,17 +24,12 @@ impl IzunaEmulatorState {
 
 /// Main loop on a whole new thread.
 pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
-    driver: Arc<Mutex<Driver>>,
+    driver: &Driver,
     config: IzunaConfig,
     emulator_state: Arc<Mutex<IzunaEmulatorState>>,
 ) -> Result<(), ()> {
-    let mut driver = driver
-        .lock()
-        .inspect_err(|e| error!("failed to lock driver: {e:?}"))
-        .map_err(|_| ())?;
     let loop_interval = Duration::from_secs_f64(1.0 / config.polling_rate as f64);
     let mut state = IzunaState::default();
-    let action_guard = Arc::new(Mutex::new(IzunaAction::default()));
     driver.add_key_hook(Box::from(_action_hook));
 
     // these are reserved for correcting f64-i32 conversion errors
@@ -42,19 +37,21 @@ pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
     let mut diff_scroll = 0.0;
 
     // start the driver and perform loop
+    let mut timestamp = Instant::now();
     loop {
-        let time_begin = Instant::now();
         sleep(loop_interval);
-        let dt = time_begin.elapsed().as_secs_f64();
+        let new_timestamp = Instant::now();
+        let dt = (new_timestamp - timestamp).as_secs_f64();
+        timestamp = new_timestamp;
 
         // derive effect from action
-        let action = {
-            action_guard
+        let (next_state, effect) = {
+            let em_state = emulator_state
                 .lock()
                 .inspect_err(|e| error!("broken lock `action_guard`: {e:?}"))
-                .map_err(|_| ())?
+                .map_err(|_| ())?;
+            _next_frame(&config, state, &em_state.action, dt)
         };
-        let (next_state, effect) = _next_frame(&config, state, &action, dt);
         state = next_state;
 
         // remember & aggregate downcast errors
@@ -85,7 +82,7 @@ pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
 //  internal stuff
 
 /// The state of the emulator that is modified across each frame.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct IzunaState {
     pub cursor_accel: Vector,
     pub cursor_speed: Vector,
@@ -105,9 +102,12 @@ impl Default for IzunaState {
 }
 
 /// Parsed user interaction.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct IzunaAction {
-    pub button_primary: bool,
+    pub button_primary_1: bool,
+    pub button_primary_2: bool,
+    pub button_primary_3: bool,
+    pub button_primary_4: bool,
     pub button_secondary: bool,
     pub button_tertiary: bool,
 
@@ -130,7 +130,10 @@ struct IzunaAction {
 impl Default for IzunaAction {
     fn default() -> Self {
         IzunaAction {
-            button_primary: false,
+            button_primary_1: false,
+            button_primary_2: false,
+            button_primary_3: false,
+            button_primary_4: false,
             button_secondary: false,
             button_tertiary: false,
             cursor_powering_up: 0,
@@ -150,7 +153,7 @@ impl Default for IzunaAction {
 }
 
 /// The outcomes of action applied upon a state.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct IzunaEffect {
     pub cursor_dx: f64,
     pub cursor_dy: f64,
@@ -158,13 +161,9 @@ struct IzunaEffect {
 }
 
 /// Send driver's events to the emulator.
-fn _action_hook(action_guard: &mut IzunaEmulatorState, key: Key, down: bool) -> Option<()> {
-    let mut action = if let Ok(guard) = action_guard.action.lock() {
-        guard
-    } else {
-        return Some(()); // do not block hook
-    };
-    let config = &action_guard.config;
+fn _action_hook(state: &mut IzunaEmulatorState, key: Key, down: bool) -> Option<()> {
+    let action = &mut state.action;
+    let config = &state.config;
 
     macro_rules! set {
         (bool, $target:expr) => {{
@@ -185,10 +184,10 @@ fn _action_hook(action_guard: &mut IzunaEmulatorState, key: Key, down: bool) -> 
 
     match key {
         // mouse buttons
-        Key::Numpad0 => set!(bool, action.button_primary),
-        Key::Numpad5 => set!(bool, action.button_primary),
-        Key::NumpadDel => set!(bool, action.button_primary),
-        Key::NumpadEnter => set!(bool, action.button_primary),
+        Key::Numpad5 => set!(bool, action.button_primary_1),
+        Key::NumpadEnter => set!(bool, action.button_primary_2),
+        Key::NumpadDel => set!(bool, action.button_primary_3),
+        Key::Numpad0 => set!(bool, action.button_primary_4),
         Key::NumpadPlus => set!(bool, action.button_secondary),
         Key::NumpadSlash => set!(bool, action.button_tertiary),
         // cursor movement
@@ -254,43 +253,21 @@ fn _next_frame(
     let scroll_power = config.scroll_power_up * (action.scroll_powering_up as f64)
         + config.scroll_power_down * (action.scroll_powering_down as f64);
 
-    let cursor_power_x_stk = _get_stack_power(
-        action.cursor_powering_upper_right
-            + action.cursor_powering_right
-            + action.cursor_powering_lower_right
-            - action.cursor_powering_lower_left
-            - action.cursor_powering_left
-            - action.cursor_powering_upper_left,
-    );
-    let cursor_power_y_stk = _get_stack_power(
-        action.cursor_powering_up + action.cursor_powering_upper_right
-            - action.cursor_powering_lower_right
-            - action.cursor_powering_down
-            - action.cursor_powering_lower_left
-            + action.cursor_powering_upper_left,
-    );
-    let cursor_power_y = _get_stack_power(action.scroll_powering_up - action.scroll_powering_down);
+    let cursor_power_stk = _get_stack_power(cursor_powering);
+    let scroll_power_stk = _get_stack_power(scroll_powering);
 
     // apply state changes
-    let (nx_cur_x_a, nx_cur_x_v, cursor_dx) = _apply_state(
+    let (nx_cur_a, nx_cur_v, cursor_d) = _apply_cursor_state(
         cursor_mode,
-        cursor_power.x * cursor_power_x_stk,
-        cursor_powering > 0,
-        prev.cursor_accel.x,
-        prev.cursor_speed.x,
-        dt,
-    );
-    let (nx_cur_y_a, nx_cur_y_v, cursor_dy) = _apply_state(
-        cursor_mode,
-        cursor_power.y * cursor_power_y_stk,
-        cursor_powering > 0,
-        prev.cursor_accel.y,
-        prev.cursor_speed.y,
+        cursor_power,
+        cursor_power_stk,
+        prev.cursor_accel,
+        prev.cursor_speed,
         dt,
     );
     let (nx_scr_a, nx_scr_v, scroll_dy) = _apply_state(
         scroll_mode,
-        scroll_power * cursor_power_y,
+        scroll_power * cursor_power_stk,
         scroll_powering > 0,
         prev.scroll_accel,
         prev.scroll_speed,
@@ -299,20 +276,14 @@ fn _next_frame(
 
     // combine state and effect
     let next_state = IzunaState {
-        cursor_accel: Vector {
-            x: nx_cur_x_a,
-            y: nx_cur_y_a,
-        },
-        cursor_speed: Vector {
-            x: nx_cur_x_v,
-            y: nx_cur_y_v,
-        },
+        cursor_accel: nx_cur_a,
+        cursor_speed: nx_cur_v,
         scroll_accel: nx_scr_a,
         scroll_speed: nx_scr_v,
     };
     let effect = IzunaEffect {
-        cursor_dx: cursor_dx,
-        cursor_dy: cursor_dy,
+        cursor_dx: cursor_d.x,
+        cursor_dy: cursor_d.y,
         scroll_dy: scroll_dy,
     };
     (next_state, effect)
@@ -337,11 +308,42 @@ fn _get_velocity_mode<'a>(
 /// total power is not the sum of all powers, but rather the sum multipled by
 /// a less-than-1 factor, to avoid the cursor moving too fast.
 fn _get_stack_power(stack_cnt: i8) -> f64 {
-    if stack_cnt.abs() > 0 {
-        f64::ln(stack_cnt as f64 + 1.0) / (stack_cnt as f64)
-    } else {
-        1.0
+    match stack_cnt.abs() {
+        0 | 1 => 1.0,
+        2 => 0.6,  // 1.2x
+        3 => 0.45, // 1.35x
+        rest => 1.4 / (rest as f64),
     }
+}
+
+fn _apply_cursor_state(
+    cfg: &VelocityModeConfig,
+    power: Vector,
+    stack_power: f64,
+    prev_accel: Vector,
+    prev_speed: Vector,
+    dt: f64,
+) -> (Vector, Vector, Vector) {
+    // friction should try to stop the cursor, but not reverse it
+    let _friction = -prev_speed.norm() * cfg.brake;
+    let _friction_dt = prev_speed.length() / _friction.length();
+    let friction = _friction * (_friction_dt / (dt + 1e-9)).min(1.0);
+    // now add power
+    let accel = if prev_speed.length() < cfg.max_speed / stack_power {
+        power * stack_power * cfg.accel + friction
+    } else {
+        friction
+    };
+    // adjust speed. hack: jerk start when speed is low for easier control
+    // let speed = prev_speed + accel * dt;
+    let speed = if prev_speed.length() < 25.0 && accel.length() > 10.0 {
+        accel.norm() * 25.0 + accel * dt
+    } else {
+        prev_speed + accel * dt
+    };
+    // adjust position
+    let d_pos = prev_speed * dt;
+    (accel, speed, d_pos)
 }
 
 fn _apply_state(
@@ -352,40 +354,7 @@ fn _apply_state(
     prev_speed: f64,
     dt: f64,
 ) -> (f64, f64, f64) {
-    let friction = if prev_speed > 0.0 {
-        -cfg.friction
-    } else {
-        cfg.friction
-    };
-    let target_accel = if is_powering {
-        if prev_speed.abs() >= cfg.max_speed - 1e-3 {
-            0.0
-        } else {
-            cfg.accel * power + friction
-        }
-    } else {
-        friction
-    };
-
-    let next_accel = if fp_eq(prev_accel, target_accel) {
-        0.0
-    } else if prev_accel < target_accel {
-        prev_accel + cfg.jerk * dt
-    } else {
-        prev_accel - cfg.jerk * dt
-    };
-    let target_speed = if fp_eq(next_accel, 0.0) {
-        prev_speed
-    } else {
-        prev_speed + next_accel * dt
-    };
-    let dx = if fp_eq(target_speed, 0.0) {
-        0.0
-    } else {
-        target_speed * dt
-    };
-
-    (next_accel, target_speed, dx)
+    (0.0, 0.0, 0.0)
 }
 
 fn fp_eq(lhs: f64, rhs: f64) -> bool {

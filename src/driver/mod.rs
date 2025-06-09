@@ -56,7 +56,7 @@ pub trait IzunaDriver<State: 'static + Send + Sync> {
     /// The hook should return a `Some` if it should be propagated to the next
     /// waiting hook, or `None` if it is handled and consumed.
     fn add_key_hook(
-        &mut self,
+        &self,
         hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
     ) -> ();
 

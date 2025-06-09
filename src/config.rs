@@ -39,15 +39,15 @@ pub struct VelocityConfig {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VelocityModeConfig {
-    pub jerk: f64,      // d of accel
+    // responsiveness is paramount so we do not need jerk
     pub accel: f64,     // max accel, mul by 'power', reached by aggregating jerk
     pub max_speed: f64, // max speed reached by aggregating accel
-    pub friction: f64,  // how fast the speed decays when not accelerating,
+    pub brake: f64,     // how fast the speed decays when not accelerating,
 }
 
 pub fn default_izuna_config() -> IzunaConfig {
     IzunaConfig {
-        polling_rate: 60, // 60 FPS
+        polling_rate: 1000, // 1000 FPS
 
         primary_click: MouseButton::Left,
         secondary_click: MouseButton::Right,
@@ -55,63 +55,55 @@ pub fn default_izuna_config() -> IzunaConfig {
 
         cursor_vel: VelocityConfig {
             drift: VelocityModeConfig {
-                jerk: 15.0,
                 accel: 0.0,
                 max_speed: 0.0,
-                friction: 20.0,
+                brake: 8000.0,
             },
             power: VelocityModeConfig {
-                jerk: 15.0,
-                accel: 5.0,
-                max_speed: 100.0,
-                friction: 20.0,
+                accel: 11200.0,
+                max_speed: 3000.0,
+                brake: 6600.0,
             },
             sprint: VelocityModeConfig {
-                jerk: 15.0,
-                accel: 8.0,
-                max_speed: 160.0,
-                friction: 20.0,
+                accel: 16000.0,
+                max_speed: 4500.0,
+                brake: 6600.0,
             },
             sneak: VelocityModeConfig {
-                jerk: 15.0,
-                accel: 3.0,
-                max_speed: 45.0,
-                friction: 20.0,
+                accel: 10000.0,
+                max_speed: 2400.0,
+                brake: 7200.0,
             },
         },
         scroll_vel: VelocityConfig {
             drift: VelocityModeConfig {
-                jerk: 15.0,
                 accel: 0.0,
                 max_speed: 0.0,
-                friction: 20.0,
+                brake: 20.0,
             },
             power: VelocityModeConfig {
-                jerk: 15.0,
-                accel: 5.0,
+                accel: 30.0,
                 max_speed: 100.0,
-                friction: 20.0,
+                brake: 20.0,
             },
             sprint: VelocityModeConfig {
-                jerk: 15.0,
-                accel: 8.0,
+                accel: 50.0,
                 max_speed: 160.0,
-                friction: 20.0,
+                brake: 20.0,
             },
             sneak: VelocityModeConfig {
-                jerk: 15.0,
-                accel: 3.0,
+                accel: 15.0,
                 max_speed: 45.0,
-                friction: 20.0,
+                brake: 20.0,
             },
         },
 
-        move_power_up: Vector { x: 1.0, y: 0.0 },
+        move_power_up: Vector { x: 0.0, y: 1.0 },
         move_power_upper_right: Vector {
             x: 0.7071,
             y: 0.7071,
         },
-        move_power_right: Vector { x: 0.0, y: 1.0 },
+        move_power_right: Vector { x: 1.0, y: 0.0 },
         move_power_lower_right: Vector {
             x: 0.7071,
             y: -0.7071,

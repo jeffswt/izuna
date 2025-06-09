@@ -1,11 +1,8 @@
 #![allow(unused)]
 #![allow(dead_code)]
 
-use std::{
-    default,
-    sync::{Arc, Mutex},
-    thread::spawn,
-};
+use std::sync::{Arc, Mutex};
+use std::thread::spawn;
 
 use config::{default_izuna_config, IzunaConfig};
 use driver::{win32::Win32IzunaDriver, IzunaDriver};
@@ -19,18 +16,18 @@ mod vector;
 fn main() {
     let config = default_izuna_config();
     let mut emulator_state = IzunaEmulatorState::new(config.clone());
-    let mut driver = Arc::new(Mutex::new(Win32IzunaDriver::create(emulator_state.clone())));
+    let mut driver = Arc::new(Win32IzunaDriver::create(emulator_state.clone()));
 
     spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(10000));
+        std::thread::sleep(std::time::Duration::from_millis(30000));
         std::process::exit(1);
     });
 
     let driver_clone = driver.clone();
     spawn(move || {
-        izuna_emulator(driver_clone, config, emulator_state);
+        izuna_emulator(driver_clone.as_ref(), config, emulator_state);
     });
 
-    driver.lock().unwrap().run_message_loop();
+    driver.run_message_loop();
     drop(driver);
 }

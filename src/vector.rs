@@ -22,6 +22,16 @@ impl Vector {
     pub fn length(&self) -> f64 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
+
+    /// Returns the direction of the vector.
+    pub fn norm(&self) -> Vector {
+        let len = self.length();
+        if len < 1e-10 {
+            Vector::new(0.0, 0.0)
+        } else {
+            Vector::new(self.x / len, self.y / len)
+        }
+    }
 }
 
 impl Display for Vector {
@@ -32,7 +42,7 @@ impl Display for Vector {
 
 impl Debug for Vector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Vector({}, {})", self.x, self.y)
+        write!(f, "Vector({:.3}, {:.3})", self.x, self.y)
     }
 }
 
