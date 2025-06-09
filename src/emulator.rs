@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use log::error;
 
 use crate::config::{IzunaConfig, VelocityConfig, VelocityModeConfig};
-use crate::driver::{IzunaDriver, Key};
+use crate::driver::{IzunaDriver, Key, MouseButton};
 use crate::vector::Vector;
 
 pub struct IzunaEmulatorState {
@@ -35,6 +35,10 @@ pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
     // these are reserved for correcting f64-i32 conversion errors
     let mut diff_cursor = Vector { x: 0.0, y: 0.0 };
     let mut diff_scroll = 0.0;
+    // and these for remembering states
+    let mut diff_did_mb_primary_down = false;
+    let mut diff_did_mb_secondary_down = false;
+    let mut diff_did_mb_tertiary_down = false;
 
     // start the driver and perform loop
     let mut timestamp = Instant::now();
@@ -56,6 +60,9 @@ pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
 
         // remember & aggregate downcast errors
         let effect = IzunaEffect {
+            mb_primary_down: effect.mb_primary_down,
+            mb_secondary_down: effect.mb_secondary_down,
+            mb_tertiary_down: effect.mb_tertiary_down,
             cursor_dx: effect.cursor_dx + diff_cursor.x,
             cursor_dy: effect.cursor_dy + diff_cursor.y,
             scroll_dy: effect.scroll_dy + diff_scroll,
@@ -74,6 +81,39 @@ pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
         if scroll_dy != 0 {
             driver.move_mouse_wheel(scroll_dy);
         }
+        // apply mouse buttons
+        fn apply_mb<Driver: IzunaDriver<IzunaEmulatorState>>(
+            driver: &Driver,
+            effect_down: bool,
+            diff_did: &mut bool,
+            cfg: &MouseButton,
+        ) {
+            if effect_down && !*diff_did {
+                driver.set_mouse_button(*cfg, true);
+                *diff_did = true;
+            } else if !effect_down && *diff_did {
+                driver.set_mouse_button(*cfg, false);
+                *diff_did = false;
+            }
+        }
+        apply_mb(
+            driver,
+            effect.mb_primary_down,
+            &mut diff_did_mb_primary_down,
+            &config.primary_click,
+        );
+        apply_mb(
+            driver,
+            effect.mb_secondary_down,
+            &mut diff_did_mb_secondary_down,
+            &config.secondary_click,
+        );
+        apply_mb(
+            driver,
+            effect.mb_tertiary_down,
+            &mut diff_did_mb_tertiary_down,
+            &config.tertiary_click,
+        );
     }
     Ok(())
 }
@@ -155,6 +195,9 @@ impl Default for IzunaAction {
 /// The outcomes of action applied upon a state.
 #[derive(Debug)]
 struct IzunaEffect {
+    pub mb_primary_down: bool,
+    pub mb_secondary_down: bool,
+    pub mb_tertiary_down: bool,
     pub cursor_dx: f64,
     pub cursor_dy: f64,
     pub scroll_dy: f64,
@@ -265,9 +308,10 @@ fn _next_frame(
         prev.cursor_speed,
         dt,
     );
-    let (nx_scr_a, nx_scr_v, scroll_dy) = _apply_state(
+    let (nx_scr_a, nx_scr_v, scroll_dy) = _apply_scroll_state(
         scroll_mode,
-        scroll_power * cursor_power_stk,
+        scroll_power,
+        cursor_power_stk,
         scroll_powering > 0,
         prev.scroll_accel,
         prev.scroll_speed,
@@ -282,6 +326,12 @@ fn _next_frame(
         scroll_speed: nx_scr_v,
     };
     let effect = IzunaEffect {
+        mb_primary_down: action.button_primary_1
+            || action.button_primary_2
+            || action.button_primary_3
+            || action.button_primary_4,
+        mb_secondary_down: action.button_secondary,
+        mb_tertiary_down: action.button_tertiary,
         cursor_dx: cursor_d.x,
         cursor_dy: cursor_d.y,
         scroll_dy: scroll_dy,
@@ -325,36 +375,46 @@ fn _apply_cursor_state(
     dt: f64,
 ) -> (Vector, Vector, Vector) {
     // friction should try to stop the cursor, but not reverse it
-    let _friction = -prev_speed.norm() * cfg.brake;
-    let _friction_dt = prev_speed.length() / _friction.length();
+    let _friction = -prev_speed.norm() * cfg.brake; // m/s^2
+    let _friction_dt = prev_speed.length() / _friction.length(); // m/s / m/s^2 = s
     let friction = _friction * (_friction_dt / (dt + 1e-9)).min(1.0);
     // now add power
     let accel = if prev_speed.length() < cfg.max_speed / stack_power {
-        power * stack_power * cfg.accel + friction
+        power * stack_power * cfg.accel + friction // m/s^2
     } else {
         friction
     };
-    // adjust speed. hack: jerk start when speed is low for easier control
-    // let speed = prev_speed + accel * dt;
-    let speed = if prev_speed.length() < 25.0 && accel.length() > 10.0 {
-        accel.norm() * 25.0 + accel * dt
-    } else {
-        prev_speed + accel * dt
-    };
+    // adjust speed.
+    let speed = prev_speed + accel * dt;
     // adjust position
     let d_pos = prev_speed * dt;
     (accel, speed, d_pos)
 }
 
-fn _apply_state(
+fn _apply_scroll_state(
     cfg: &VelocityModeConfig,
     power: f64,
+    stack_power: f64,
     is_powering: bool,
     prev_accel: f64,
     prev_speed: f64,
     dt: f64,
 ) -> (f64, f64, f64) {
-    (0.0, 0.0, 0.0)
+    // friction should try to stop the cursor, but not reverse it
+    let _friction = -prev_speed * cfg.brake; // m/s^2
+    let _friction_dt = prev_speed.abs() / _friction.abs(); // m/s / m/s^2 = s
+    let friction = _friction * (_friction_dt / (dt + 1e-9)).min(1.0);
+    // now add power
+    let accel = if prev_speed.abs() < cfg.max_speed / stack_power {
+        power * stack_power * cfg.accel + friction // m/s^2
+    } else {
+        friction
+    };
+    // adjust speed.
+    let speed = prev_speed + accel * dt;
+    // adjust position
+    let d_pos = prev_speed * dt;
+    (accel, speed, d_pos)
 }
 
 fn fp_eq(lhs: f64, rhs: f64) -> bool {

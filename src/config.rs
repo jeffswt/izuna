@@ -40,9 +40,9 @@ pub struct VelocityConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VelocityModeConfig {
     // responsiveness is paramount so we do not need jerk
-    pub accel: f64,     // max accel, mul by 'power', reached by aggregating jerk
-    pub max_speed: f64, // max speed reached by aggregating accel
-    pub brake: f64,     // how fast the speed decays when not accelerating,
+    pub accel: f64,     // m/s^2, max accel, mul by 'power', reached by aggregating jerk
+    pub max_speed: f64, // m/s, max speed reached by aggregating accel
+    pub brake: f64,     // m/s^2, how fast the speed decays when not accelerating,
 }
 
 pub fn default_izuna_config() -> IzunaConfig {
@@ -60,13 +60,13 @@ pub fn default_izuna_config() -> IzunaConfig {
                 brake: 8000.0,
             },
             power: VelocityModeConfig {
-                accel: 11200.0,
-                max_speed: 3000.0,
-                brake: 6600.0,
+                accel: 13200.0,
+                max_speed: 3600.0,
+                brake: 7000.0,
             },
             sprint: VelocityModeConfig {
                 accel: 16000.0,
-                max_speed: 4500.0,
+                max_speed: 5000.0,
                 brake: 6600.0,
             },
             sneak: VelocityModeConfig {
