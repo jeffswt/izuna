@@ -209,45 +209,46 @@ fn _action_hook(state: &mut IzunaEmulatorState, key: Key, down: bool) -> Option<
     let config = &state.config;
 
     macro_rules! set {
-        (bool, $target:expr) => {{
+        (bool, $target:expr, $ret:expr) => {{
             match down {
                 true => $target = true,
                 false => $target = false,
             };
-            None
+            $ret
         }};
-        (i8, $target:expr) => {{
+        (i8, $target:expr, $ret:expr) => {{
             match down {
                 true => $target = 1,
                 false => $target = 0,
             };
-            None
+            $ret
         }};
     }
 
     match key {
         // mouse buttons
-        Key::Numpad5 => set!(bool, action.button_primary_1),
-        Key::NumpadEnter => set!(bool, action.button_primary_2),
-        Key::NumpadDel => set!(bool, action.button_primary_3),
-        Key::Numpad0 => set!(bool, action.button_primary_4),
-        Key::NumpadPlus => set!(bool, action.button_secondary),
-        Key::NumpadSlash => set!(bool, action.button_tertiary),
+        Key::Numpad5 => set!(bool, action.button_primary_1, None),
+        Key::NumpadEnter => set!(bool, action.button_primary_2, None),
+        Key::NumpadDel => set!(bool, action.button_primary_3, None),
+        Key::Numpad0 => set!(bool, action.button_primary_4, None),
+        Key::NumpadPlus => set!(bool, action.button_secondary, None),
+        Key::NumpadSlash => set!(bool, action.button_tertiary, None),
         // cursor movement
-        Key::Numpad8 => set!(i8, action.cursor_powering_up),
-        Key::Numpad9 => set!(i8, action.cursor_powering_upper_right),
-        Key::Numpad6 => set!(i8, action.cursor_powering_right),
-        Key::Numpad3 => set!(i8, action.cursor_powering_lower_right),
-        Key::Numpad2 => set!(i8, action.cursor_powering_down),
-        Key::Numpad1 => set!(i8, action.cursor_powering_lower_left),
-        Key::Numpad4 => set!(i8, action.cursor_powering_left),
-        Key::Numpad7 => set!(i8, action.cursor_powering_upper_left),
+        Key::Numpad8 => set!(i8, action.cursor_powering_up, None),
+        Key::Numpad9 => set!(i8, action.cursor_powering_upper_right, None),
+        Key::Numpad6 => set!(i8, action.cursor_powering_right, None),
+        Key::Numpad3 => set!(i8, action.cursor_powering_lower_right, None),
+        Key::Numpad2 => set!(i8, action.cursor_powering_down, None),
+        Key::Numpad1 => set!(i8, action.cursor_powering_lower_left, None),
+        Key::Numpad4 => set!(i8, action.cursor_powering_left, None),
+        Key::Numpad7 => set!(i8, action.cursor_powering_upper_left, None),
         // scroll movement
-        Key::NumpadAsterisk => set!(i8, action.scroll_powering_up),
-        Key::NumpadHyphen => set!(i8, action.scroll_powering_down),
+        Key::NumpadAsterisk => set!(i8, action.scroll_powering_up, None),
+        Key::NumpadHyphen => set!(i8, action.scroll_powering_down, None),
         // modifiers
-        Key::LeftCtrl => set!(bool, action.sprinting),
-        Key::LeftAlt => set!(bool, action.sneaking),
+        Key::LeftShift => set!(bool, action.sprinting, Some(())),
+        Key::LeftCtrl => set!(bool, action.sprinting, Some(())),
+        Key::LeftAlt => set!(bool, action.sneaking, Some(())),
         _ => Some(()),
     }
 }
@@ -260,20 +261,25 @@ fn _next_frame(
     dt: f64,
 ) -> (IzunaState, IzunaEffect) {
     // parse aggregated action
-    let cursor_powering = action.cursor_powering_up
-        + action.cursor_powering_upper_right
+    let cursor_powering_x = (action.cursor_powering_upper_right
         + action.cursor_powering_right
         + action.cursor_powering_lower_right
-        + action.cursor_powering_down
-        + action.cursor_powering_lower_left
-        + action.cursor_powering_left
-        + action.cursor_powering_upper_left;
+        - action.cursor_powering_lower_left
+        - action.cursor_powering_left
+        - action.cursor_powering_upper_left)
+        .abs();
+    let cursor_powering_y = (action.cursor_powering_up + action.cursor_powering_upper_right
+        - action.cursor_powering_lower_right
+        - action.cursor_powering_down
+        - action.cursor_powering_lower_left
+        + action.cursor_powering_upper_left)
+        .abs();
     let scroll_powering = action.scroll_powering_up + action.scroll_powering_down;
 
     // infer velocity modes
     let cursor_mode = _get_velocity_mode(
         &config.cursor_vel,
-        cursor_powering > 0,
+        cursor_powering_x > 0 || cursor_powering_y > 0,
         action.sprinting,
         action.sneaking,
     );
@@ -292,27 +298,27 @@ fn _next_frame(
         + config.move_power_down * action.cursor_powering_down
         + config.move_power_lower_left * action.cursor_powering_lower_left
         + config.move_power_left * action.cursor_powering_left
-        + config.move_power_upper_left * action.cursor_powering_upper_left);
+        + config.move_power_upper_left * action.cursor_powering_upper_left)
+        .norm();
     let scroll_power = config.scroll_power_up * (action.scroll_powering_up as f64)
         + config.scroll_power_down * (action.scroll_powering_down as f64);
 
-    let cursor_power_stk = _get_stack_power(cursor_powering);
-    let scroll_power_stk = _get_stack_power(scroll_powering);
-
     // apply state changes
     let (nx_cur_a, nx_cur_v, cursor_d) = _apply_cursor_state(
+        config.cursor_vel.generic_scale,
         cursor_mode,
         cursor_power,
-        cursor_power_stk,
+        _get_stack_power(cursor_powering_x),
+        _get_stack_power(cursor_powering_y),
         prev.cursor_accel,
         prev.cursor_speed,
         dt,
     );
     let (nx_scr_a, nx_scr_v, scroll_dy) = _apply_scroll_state(
+        config.scroll_vel.generic_scale,
         scroll_mode,
         scroll_power,
-        cursor_power_stk,
-        scroll_powering > 0,
+        _get_stack_power(scroll_powering),
         prev.scroll_accel,
         prev.scroll_speed,
         dt,
@@ -350,7 +356,8 @@ fn _get_velocity_mode<'a>(
         (true, true, false) => &config.sprint,
         (true, false, true) => &config.sneak,
         (true, false, false) => &config.power,
-        (false, _, _) => &config.drift,
+        (false, _, true) => &config.sneak,
+        (false, _, false) => &config.drift,
     }
 }
 
@@ -360,60 +367,69 @@ fn _get_velocity_mode<'a>(
 fn _get_stack_power(stack_cnt: i8) -> f64 {
     match stack_cnt.abs() {
         0 | 1 => 1.0,
-        2 => 0.6,  // 1.2x
-        3 => 0.45, // 1.35x
-        rest => 1.4 / (rest as f64),
+        2 => 1.2,  // 1.2x
+        3 => 1.35, // 1.35x
+        _ => 1.4,
     }
 }
 
 fn _apply_cursor_state(
+    generic_scale: f64,
     cfg: &VelocityModeConfig,
     power: Vector,
-    stack_power: f64,
+    stack_power_x: f64,
+    stack_power_y: f64,
     prev_accel: Vector,
     prev_speed: Vector,
     dt: f64,
 ) -> (Vector, Vector, Vector) {
-    // friction should try to stop the cursor, but not reverse it
-    let _friction = -prev_speed.norm() * cfg.brake; // m/s^2
-    let _friction_dt = prev_speed.length() / _friction.length(); // m/s / m/s^2 = s
-    let friction = _friction * (_friction_dt / (dt + 1e-9)).min(1.0);
     // now add power
-    let accel = if prev_speed.length() < cfg.max_speed / stack_power {
-        power * stack_power * cfg.accel + friction // m/s^2
-    } else {
-        friction
+    let accel = Vector {
+        x: power.x * stack_power_x * cfg.accel,
+        y: power.y * stack_power_y * cfg.accel,
     };
-    // adjust speed.
+    // adjust speed
     let speed = prev_speed + accel * dt;
+    let (speed, mut speed_len) = (speed.norm(), speed.length());
+    // do not accelerate if over max speed
+    if speed_len > cfg.max_speed {
+        speed_len = prev_speed.length();
+    }
+    // apply friction
+    speed_len = (speed_len - cfg.brake * dt).max(0.0);
+    let speed = speed * speed_len;
     // adjust position
-    let d_pos = prev_speed * dt;
+    let d_pos = speed * generic_scale * dt;
     (accel, speed, d_pos)
 }
 
 fn _apply_scroll_state(
+    generic_scale: f64,
     cfg: &VelocityModeConfig,
     power: f64,
     stack_power: f64,
-    is_powering: bool,
     prev_accel: f64,
     prev_speed: f64,
     dt: f64,
 ) -> (f64, f64, f64) {
-    // friction should try to stop the cursor, but not reverse it
-    let _friction = -prev_speed * cfg.brake; // m/s^2
-    let _friction_dt = prev_speed.abs() / _friction.abs(); // m/s / m/s^2 = s
-    let friction = _friction * (_friction_dt / (dt + 1e-9)).min(1.0);
     // now add power
-    let accel = if prev_speed.abs() < cfg.max_speed / stack_power {
-        power * stack_power * cfg.accel + friction // m/s^2
-    } else {
-        friction
-    };
-    // adjust speed.
+    let accel = power * stack_power * cfg.accel;
+    // adjust speed
     let speed = prev_speed + accel * dt;
+    let (speed, mut speed_len) = (speed >= 0.0, speed.abs());
+    // do not accelerate if over max speed
+    if speed_len > cfg.max_speed {
+        speed_len = prev_speed.abs();
+    }
+    // apply friction
+    speed_len = (speed_len - cfg.brake * dt).max(0.0);
+    let speed = if speed {
+        speed_len
+    } else {
+        -speed_len
+    };
     // adjust position
-    let d_pos = prev_speed * dt;
+    let d_pos = speed * generic_scale * dt;
     (accel, speed, d_pos)
 }
 

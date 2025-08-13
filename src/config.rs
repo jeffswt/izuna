@@ -31,6 +31,7 @@ pub struct IzunaConfig {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VelocityConfig {
+    pub generic_scale: f64,
     pub drift: VelocityModeConfig,  // not powering at all
     pub power: VelocityModeConfig,  // normal power
     pub sprint: VelocityModeConfig, // fast power
@@ -40,61 +41,63 @@ pub struct VelocityConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VelocityModeConfig {
     // responsiveness is paramount so we do not need jerk
-    pub accel: f64,     // m/s^2, max accel, mul by 'power', reached by aggregating jerk
+    pub accel: f64, // m/s^2, max accel, mul by 'power', reached by aggregating jerk
     pub max_speed: f64, // m/s, max speed reached by aggregating accel
-    pub brake: f64,     // m/s^2, how fast the speed decays when not accelerating,
+    pub brake: f64, // m/s^2, how fast the speed decays when not accelerating,
 }
 
 pub fn default_izuna_config() -> IzunaConfig {
     IzunaConfig {
-        polling_rate: 1000, // 1000 FPS
+        polling_rate: 360, // 360 fps
 
         primary_click: MouseButton::Left,
         secondary_click: MouseButton::Right,
         tertiary_click: MouseButton::Middle,
 
         cursor_vel: VelocityConfig {
+            generic_scale: 1.0,
             drift: VelocityModeConfig {
                 accel: 0.0,
                 max_speed: 0.0,
-                brake: 8000.0,
+                brake: 7200.0,
             },
             power: VelocityModeConfig {
-                accel: 13200.0,
-                max_speed: 3600.0,
-                brake: 7000.0,
-            },
-            sprint: VelocityModeConfig {
-                accel: 16000.0,
-                max_speed: 5000.0,
-                brake: 6600.0,
-            },
-            sneak: VelocityModeConfig {
-                accel: 10000.0,
+                accel: 11200.0, // 4000
                 max_speed: 2400.0,
                 brake: 7200.0,
             },
+            sprint: VelocityModeConfig {
+                accel: 16000.0, // 8800
+                max_speed: 4800.0,
+                brake: 7200.0,
+            },
+            sneak: VelocityModeConfig {
+                accel: 34000.0, // 2000
+                max_speed: 1600.0,
+                brake: 32000.0,
+            },
         },
         scroll_vel: VelocityConfig {
+            generic_scale: 1.0,
             drift: VelocityModeConfig {
                 accel: 0.0,
                 max_speed: 0.0,
-                brake: 20.0,
+                brake: 7200.0,
             },
             power: VelocityModeConfig {
-                accel: 30.0,
-                max_speed: 100.0,
-                brake: 20.0,
+                accel: 14400.0, // 7200
+                max_speed: 3600.0,
+                brake: 7200.0,
             },
             sprint: VelocityModeConfig {
-                accel: 50.0,
-                max_speed: 160.0,
-                brake: 20.0,
+                accel: 16800.0, // 9600
+                max_speed: 5400.0,
+                brake: 7200.0,
             },
             sneak: VelocityModeConfig {
-                accel: 15.0,
-                max_speed: 45.0,
-                brake: 20.0,
+                accel: 27600.0, // 3600
+                max_speed: 1800.0,
+                brake: 24000.0,
             },
         },
 
