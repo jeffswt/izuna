@@ -13,8 +13,7 @@ but can be easy to use to other groups as well.
 ## Installation
 
 ```sh
-pip install -r requirements.txt
-python izuna.py  # Use python3
+cargo run
 ```
 
 ## Usage
@@ -39,7 +38,9 @@ The keys and their corresponding functions are as following:
 | Numpad /     | middle mouse button                                  |
 | Numpad *     | scroll up                                            |
 | Numpad -     | scroll down                                          |
-| Left Alt     | slow down pointer and scrolling                      |
+| Left Shift   | speed up pointer or scrolling                        |
+| Left Ctrl    | speed up pointer or scrolling                        |
+| Left Alt     | slow down pointer or scrolling, or apply brakes      |
 | Num Lock     | *izuna* is disabled while num lock is on, vice versa |
 
 ## Known Issues

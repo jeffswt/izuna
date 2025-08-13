@@ -18,16 +18,12 @@ fn main() {
     let mut emulator_state = IzunaEmulatorState::new(config.clone());
     let mut driver = Arc::new(Win32IzunaDriver::create(emulator_state.clone()));
 
-    spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(30000));
-        std::process::exit(1);
-    });
-
     let driver_clone = driver.clone();
     spawn(move || {
         izuna_emulator(driver_clone.as_ref(), config, emulator_state);
     });
 
+    println!("izuna has started, press ctrl+c to exit.");
     driver.run_message_loop();
     drop(driver);
 }
