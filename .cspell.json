@@ -1,0 +1,27 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": [
+    "**/__pycache__"
+  ],
+  "allowCompoundWords": true,
+  "dictionaries": [
+    "python",
+    "filetypes",
+    "softwareTerms",
+    "misc"
+  ],
+  "words": [
+    "CALLWNDPROCRET",
+    "izuna",
+    "KBDLLHOOKSTRUCT",
+    "KEYUP",
+    "LCONTROL",
+    "LMENU",
+    "MIDDLEUP",
+    "MOUSEEVENTF",
+    "RCONTROL",
+    "SYSKEYUP"
+  ],
+  "flagWords": []
+}

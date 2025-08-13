@@ -1,0 +1,80 @@
+use std::sync::{Arc, Mutex};
+
+pub mod win32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Key {
+    // modifiers
+    LeftCtrl,
+    LeftAlt,
+    LeftShift,
+    RightCtrl,
+    RightAlt,
+    RightShift,
+    // direction keys
+    Up,
+    Down,
+    Left,
+    Right,
+    // numpad
+    NumLock,
+    Numpad0,
+    Numpad1,
+    Numpad2,
+    Numpad3,
+    Numpad4,
+    Numpad5,
+    Numpad6,
+    Numpad7,
+    Numpad8,
+    Numpad9,
+    NumpadEnter,
+    NumpadDel,
+    NumpadPlus,
+    NumpadHyphen,
+    NumpadAsterisk,
+    NumpadSlash,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseButton {
+    Left,
+    Middle,
+    Right,
+}
+
+/// The Izuna driver is implemented on a by-platform basis, allowing for
+/// separate integrations with different OSes.
+pub trait IzunaDriver<State: 'static + Send + Sync> {
+    /// Initializes the driver with the given state.
+    fn create(state: Arc<Mutex<State>>) -> Self;
+
+    /// Listen to key updates and updates the state accordingly. If a hook
+    /// existed previously, the new hook will be called prior the the previous
+    /// ones. Hooks are global.
+    ///
+    /// The hook should return a `Some` if it should be propagated to the next
+    /// waiting hook, or `None` if it is handled and consumed.
+    fn add_key_hook(
+        &self,
+        hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
+    ) -> ();
+
+    /// Run message loop on main thread. Additional logic should be executed in
+    /// a background thread.
+    fn run_message_loop(&self) -> ();
+
+    /// Get current key state. The first return value shows whether the key is
+    /// currently pressed down, and the second indicates whether the 'toggle'
+    /// (e.g. Caps Lock) indicator light is on.
+    fn get_key_state(&self, key: Key) -> (bool, bool);
+
+    /// Set the mouse button state.
+    fn set_mouse_button(&self, button: MouseButton, down: bool) -> ();
+
+    /// Move the mouse by the given delta x and y values.
+    fn move_mouse_pointer(&self, dx: i32, dy: i32) -> ();
+
+    /// Move the scroll position by the given delta y value.
+    fn move_mouse_wheel(&self, dy: i32) -> ();
+}
