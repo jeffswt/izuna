@@ -181,16 +181,7 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
         true
     };
 
-    // println!("hooking {key_down:?} {key:?} {nCode} {forward}");
-    // return CallNextHookEx(None, nCode, wParam, lParam);
-
     if nCode < 0 || forward {
-        let h_hook = GLOBAL_HOOKED
-            .lock()
-            .inspect_err(|e| eprintln!("hook err {e:?}"))
-            .unwrap()
-            .as_ref()
-            .map(|h| HHOOK(*h as _));
         // If nCode is less than zero, the hook procedure must return the value
         // returned by CallNextHookEx function.
         // If nCode is greater than or equal to zero, it is highly recommended
@@ -201,7 +192,7 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
         // CallNextHookEx, the return value should be zero.
         CallNextHookEx(None, nCode, wParam, lParam)
     } else {
-        LRESULT(0)
+        LRESULT(1)
     }
 }
 
