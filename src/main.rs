@@ -20,7 +20,7 @@ fn main() {
 
     let driver_clone = driver.clone();
     spawn(move || {
-        izuna_emulator(driver_clone.as_ref(), config, emulator_state);
+        izuna_emulator(driver_clone, config, emulator_state);
     });
 
     println!("izuna has started, press ctrl+c to exit.");

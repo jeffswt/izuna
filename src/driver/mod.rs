@@ -34,6 +34,17 @@ pub enum Key {
     NumpadHyphen,
     NumpadAsterisk,
     NumpadSlash,
+    // numpad without numlock
+    NavpadEnd,    // 1
+    NavpadDown,   // 2
+    NavpadNext,   // 3
+    NavpadLeft,   // 4
+    NavpadClear,  // 5
+    NavpadRight,  // 6
+    NavpadHome,   // 7
+    NavpadUp,     // 8
+    NavpadPrior,  // 9
+    NavpadDelete, // .
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -41,6 +52,10 @@ pub enum MouseButton {
     Left,
     Middle,
     Right,
+}
+
+pub trait IzunaKeyHook<State: 'static + Send + Sync, Driver: IzunaDriver<State>> {
+    fn call(&self, driver: &Driver, state: &mut State, key: Key, down: bool) -> Option<()>;
 }
 
 /// The Izuna driver is implemented on a by-platform basis, allowing for
@@ -56,8 +71,8 @@ pub trait IzunaDriver<State: 'static + Send + Sync> {
     /// The hook should return a `Some` if it should be propagated to the next
     /// waiting hook, or `None` if it is handled and consumed.
     fn add_key_hook(
-        &self,
-        hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
+        self: Arc<Self>,
+        hook: Box<dyn 'static + Send + Sync + IzunaKeyHook<State, Self>>,
     ) -> ();
 
     /// Run message loop on main thread. Additional logic should be executed in

@@ -12,11 +12,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     self, GetKeyState, SendInput, INPUT, INPUT_0, MOUSEINPUT, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    self, CallNextHookEx, SetWindowsHookExW, HHOOK, KBDLLHOOKSTRUCT, WM_KEYDOWN, WM_KEYUP,
-    WM_SYSKEYDOWN, WM_SYSKEYUP,
+    self, CallNextHookEx, SetWindowsHookExW, HHOOK, KBDLLHOOKSTRUCT, KBDLLHOOKSTRUCT_FLAGS,
+    LLKHF_EXTENDED, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 use super::{IzunaDriver, Key, MouseButton};
+use crate::driver::IzunaKeyHook;
 
 pub struct Win32IzunaDriver<State> {
     state: Arc<Mutex<State>>,
@@ -60,13 +61,14 @@ impl<State: 'static + Send + Sync> IzunaDriver<State> for Win32IzunaDriver<State
     }
 
     fn add_key_hook(
-        &self,
-        mut hook: Box<dyn Send + Sync + Fn(&mut State, Key, bool) -> Option<()>>,
+        self: Arc<Self>,
+        hook: Box<dyn 'static + Send + Sync + IzunaKeyHook<State, Self>>,
     ) -> () {
+        let self_clone = self.clone();
         let state_clone = self.state.clone();
         let wrapped = move |key, is_down| {
             if let Ok(mut state) = state_clone.lock() {
-                hook(&mut state, key, is_down)
+                hook.call(&self_clone, &mut state, key, is_down)
             } else {
                 eprintln!("hook: failed to lock state");
                 None
@@ -162,9 +164,8 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
     let kb_dll_hook = lParam.0 as *const KBDLLHOOKSTRUCT;
     let key = kb_dll_hook
         .as_ref()
-        .map(|hook| hook.vkCode)
-        .map(|vk| VIRTUAL_KEY(vk as u16))
-        .map(_key_from_win32_vk)
+        .map(|hook| (VIRTUAL_KEY(hook.vkCode as u16), hook.flags))
+        .map(|(vk, flags)| _key_from_win32_vk(vk, flags))
         .unwrap_or(None);
     let forward = if let (Some(key_down), Some(key)) = (key_down, key) {
         let mut key = Some(key);
@@ -193,6 +194,49 @@ unsafe extern "system" fn _hook_func(nCode: i32, wParam: WPARAM, lParam: LPARAM)
         CallNextHookEx(None, nCode, wParam, lParam)
     } else {
         LRESULT(1)
+    }
+}
+
+fn _key_from_win32_vk(vk: VIRTUAL_KEY, flags: KBDLLHOOKSTRUCT_FLAGS) -> Option<Key> {
+    match (vk, (flags & LLKHF_EXTENDED).0 != 0) {
+        (KeyboardAndMouse::VK_LCONTROL, _) => Some(Key::LeftCtrl),
+        (KeyboardAndMouse::VK_LMENU, _) => Some(Key::LeftAlt),
+        (KeyboardAndMouse::VK_LSHIFT, _) => Some(Key::LeftShift),
+        (KeyboardAndMouse::VK_RCONTROL, _) => Some(Key::RightCtrl),
+        (KeyboardAndMouse::VK_RMENU, _) => Some(Key::RightAlt),
+        (KeyboardAndMouse::VK_RSHIFT, _) => Some(Key::RightShift),
+        (KeyboardAndMouse::VK_UP, true) => Some(Key::Up),
+        (KeyboardAndMouse::VK_DOWN, true) => Some(Key::Down),
+        (KeyboardAndMouse::VK_LEFT, true) => Some(Key::Left),
+        (KeyboardAndMouse::VK_RIGHT, true) => Some(Key::Right),
+        (KeyboardAndMouse::VK_NUMLOCK, _) => Some(Key::NumLock),
+        (KeyboardAndMouse::VK_NUMPAD0, _) => Some(Key::Numpad0),
+        (KeyboardAndMouse::VK_NUMPAD1, _) => Some(Key::Numpad1),
+        (KeyboardAndMouse::VK_NUMPAD2, _) => Some(Key::Numpad2),
+        (KeyboardAndMouse::VK_NUMPAD3, _) => Some(Key::Numpad3),
+        (KeyboardAndMouse::VK_NUMPAD4, _) => Some(Key::Numpad4),
+        (KeyboardAndMouse::VK_NUMPAD5, _) => Some(Key::Numpad5),
+        (KeyboardAndMouse::VK_NUMPAD6, _) => Some(Key::Numpad6),
+        (KeyboardAndMouse::VK_NUMPAD7, _) => Some(Key::Numpad7),
+        (KeyboardAndMouse::VK_NUMPAD8, _) => Some(Key::Numpad8),
+        (KeyboardAndMouse::VK_NUMPAD9, _) => Some(Key::Numpad9),
+        (KeyboardAndMouse::VK_RETURN, true) => Some(Key::NumpadEnter),
+        (KeyboardAndMouse::VK_DECIMAL, _) => Some(Key::NumpadDel),
+        (KeyboardAndMouse::VK_ADD, _) => Some(Key::NumpadPlus),
+        (KeyboardAndMouse::VK_SUBTRACT, _) => Some(Key::NumpadHyphen),
+        (KeyboardAndMouse::VK_MULTIPLY, _) => Some(Key::NumpadAsterisk),
+        (KeyboardAndMouse::VK_DIVIDE, _) => Some(Key::NumpadSlash),
+        (KeyboardAndMouse::VK_END, false) => Some(Key::NavpadEnd),
+        (KeyboardAndMouse::VK_DOWN, false) => Some(Key::NavpadDown),
+        (KeyboardAndMouse::VK_NEXT, false) => Some(Key::NavpadNext),
+        (KeyboardAndMouse::VK_LEFT, false) => Some(Key::NavpadLeft),
+        (KeyboardAndMouse::VK_CLEAR, false) => Some(Key::NavpadClear),
+        (KeyboardAndMouse::VK_RIGHT, false) => Some(Key::NavpadRight),
+        (KeyboardAndMouse::VK_HOME, false) => Some(Key::NavpadHome),
+        (KeyboardAndMouse::VK_UP, false) => Some(Key::NavpadUp),
+        (KeyboardAndMouse::VK_PRIOR, false) => Some(Key::NavpadPrior),
+        (KeyboardAndMouse::VK_DELETE, false) => Some(Key::NavpadDelete),
+        _ => None,
     }
 }
 
@@ -225,39 +269,17 @@ fn _key_to_win32_vk(key: Key) -> VIRTUAL_KEY {
         Key::NumpadHyphen => KeyboardAndMouse::VK_SUBTRACT,
         Key::NumpadAsterisk => KeyboardAndMouse::VK_MULTIPLY,
         Key::NumpadSlash => KeyboardAndMouse::VK_DIVIDE,
-    }
-}
-
-fn _key_from_win32_vk(vk: VIRTUAL_KEY) -> Option<Key> {
-    match vk {
-        KeyboardAndMouse::VK_LCONTROL => Some(Key::LeftCtrl),
-        KeyboardAndMouse::VK_LMENU => Some(Key::LeftAlt),
-        KeyboardAndMouse::VK_LSHIFT => Some(Key::LeftShift),
-        KeyboardAndMouse::VK_RCONTROL => Some(Key::RightCtrl),
-        KeyboardAndMouse::VK_RMENU => Some(Key::RightAlt),
-        KeyboardAndMouse::VK_RSHIFT => Some(Key::RightShift),
-        KeyboardAndMouse::VK_UP => Some(Key::Up),
-        KeyboardAndMouse::VK_DOWN => Some(Key::Down),
-        KeyboardAndMouse::VK_LEFT => Some(Key::Left),
-        KeyboardAndMouse::VK_RIGHT => Some(Key::Right),
-        KeyboardAndMouse::VK_NUMLOCK => Some(Key::NumLock),
-        KeyboardAndMouse::VK_NUMPAD0 => Some(Key::Numpad0),
-        KeyboardAndMouse::VK_NUMPAD1 => Some(Key::Numpad1),
-        KeyboardAndMouse::VK_NUMPAD2 => Some(Key::Numpad2),
-        KeyboardAndMouse::VK_NUMPAD3 => Some(Key::Numpad3),
-        KeyboardAndMouse::VK_NUMPAD4 => Some(Key::Numpad4),
-        KeyboardAndMouse::VK_NUMPAD5 => Some(Key::Numpad5),
-        KeyboardAndMouse::VK_NUMPAD6 => Some(Key::Numpad6),
-        KeyboardAndMouse::VK_NUMPAD7 => Some(Key::Numpad7),
-        KeyboardAndMouse::VK_NUMPAD8 => Some(Key::Numpad8),
-        KeyboardAndMouse::VK_NUMPAD9 => Some(Key::Numpad9),
-        KeyboardAndMouse::VK_RETURN => Some(Key::NumpadEnter),
-        KeyboardAndMouse::VK_DECIMAL => Some(Key::NumpadDel),
-        KeyboardAndMouse::VK_ADD => Some(Key::NumpadPlus),
-        KeyboardAndMouse::VK_SUBTRACT => Some(Key::NumpadHyphen),
-        KeyboardAndMouse::VK_MULTIPLY => Some(Key::NumpadAsterisk),
-        KeyboardAndMouse::VK_DIVIDE => Some(Key::NumpadSlash),
-        _ => None,
+        Key::NavpadEnd => KeyboardAndMouse::VK_END,
+        Key::NavpadDown => KeyboardAndMouse::VK_DOWN,
+        Key::NavpadNext => KeyboardAndMouse::VK_NEXT,
+        Key::NavpadLeft => KeyboardAndMouse::VK_LEFT,
+        Key::NavpadClear => KeyboardAndMouse::VK_CLEAR,
+        Key::NavpadRight => KeyboardAndMouse::VK_RIGHT,
+        Key::NavpadHome => KeyboardAndMouse::VK_HOME,
+        Key::NavpadUp => KeyboardAndMouse::VK_UP,
+        Key::NavpadPrior => KeyboardAndMouse::VK_PRIOR,
+        Key::NavpadNext => KeyboardAndMouse::VK_NEXT,
+        Key::NavpadDelete => KeyboardAndMouse::VK_DELETE,
     }
 }
 

@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -5,7 +6,7 @@ use std::time::{Duration, Instant};
 use log::error;
 
 use crate::config::{IzunaConfig, VelocityConfig, VelocityModeConfig};
-use crate::driver::{IzunaDriver, Key, MouseButton};
+use crate::driver::{IzunaDriver, IzunaKeyHook, Key, MouseButton};
 use crate::vector::Vector;
 
 pub struct IzunaEmulatorState {
@@ -23,14 +24,16 @@ impl IzunaEmulatorState {
 }
 
 /// Main loop on a whole new thread.
-pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
-    driver: &Driver,
+pub fn izuna_emulator<Driver: 'static + Send + Sync + IzunaDriver<IzunaEmulatorState>>(
+    driver: Arc<Driver>,
     config: IzunaConfig,
     emulator_state: Arc<Mutex<IzunaEmulatorState>>,
 ) -> Result<(), ()> {
     let loop_interval = Duration::from_secs_f64(1.0 / config.polling_rate as f64);
     let mut state = IzunaState::default();
-    driver.add_key_hook(Box::from(_action_hook));
+    driver.clone().add_key_hook(Box::from(ActionHook {
+        _driver: PhantomData,
+    }));
 
     // these are reserved for correcting f64-i32 conversion errors
     let mut diff_cursor = Vector { x: 0.0, y: 0.0 };
@@ -97,19 +100,19 @@ pub fn izuna_emulator<Driver: IzunaDriver<IzunaEmulatorState>>(
             }
         }
         apply_mb(
-            driver,
+            driver.as_ref(),
             effect.mb_primary_down,
             &mut diff_did_mb_primary_down,
             &config.primary_click,
         );
         apply_mb(
-            driver,
+            driver.as_ref(),
             effect.mb_secondary_down,
             &mut diff_did_mb_secondary_down,
             &config.secondary_click,
         );
         apply_mb(
-            driver,
+            driver.as_ref(),
             effect.mb_tertiary_down,
             &mut diff_did_mb_tertiary_down,
             &config.tertiary_click,
@@ -144,6 +147,8 @@ impl Default for IzunaState {
 /// Parsed user interaction.
 #[derive(Debug)]
 struct IzunaAction {
+    pub action_enabled: Option<bool>,
+
     pub button_primary_1: bool,
     pub button_primary_2: bool,
     pub button_primary_3: bool,
@@ -170,6 +175,7 @@ struct IzunaAction {
 impl Default for IzunaAction {
     fn default() -> Self {
         IzunaAction {
+            action_enabled: None,
             button_primary_1: false,
             button_primary_2: false,
             button_primary_3: false,
@@ -204,52 +210,93 @@ struct IzunaEffect {
 }
 
 /// Send driver's events to the emulator.
-fn _action_hook(state: &mut IzunaEmulatorState, key: Key, down: bool) -> Option<()> {
-    let action = &mut state.action;
-    let config = &state.config;
+struct ActionHook<Driver: IzunaDriver<IzunaEmulatorState>> {
+    _driver: PhantomData<Driver>,
+}
 
-    macro_rules! set {
-        (bool, $target:expr, $ret:expr) => {{
-            match down {
-                true => $target = true,
-                false => $target = false,
-            };
-            $ret
-        }};
-        (i8, $target:expr, $ret:expr) => {{
-            match down {
-                true => $target = 1,
-                false => $target = 0,
-            };
-            $ret
-        }};
-    }
+impl<Driver: IzunaDriver<IzunaEmulatorState>> IzunaKeyHook<IzunaEmulatorState, Driver>
+    for ActionHook<Driver>
+{
+    fn call(
+        &self,
+        driver: &Driver,
+        state: &mut IzunaEmulatorState,
+        key: Key,
+        down: bool,
+    ) -> Option<()> {
+        let action = &mut state.action;
+        let config = &state.config;
+        let action_enabled = match action.action_enabled {
+            Some(v) => v,
+            None => !driver.get_key_state(Key::NumLock).1,
+        };
+        action.action_enabled = Some(action_enabled);
 
-    match key {
-        // mouse buttons
-        Key::Numpad5 => set!(bool, action.button_primary_1, None),
-        Key::NumpadEnter => set!(bool, action.button_primary_2, None),
-        Key::NumpadDel => set!(bool, action.button_primary_3, None),
-        Key::Numpad0 => set!(bool, action.button_primary_4, None),
-        Key::NumpadPlus => set!(bool, action.button_secondary, None),
-        Key::NumpadSlash => set!(bool, action.button_tertiary, None),
-        // cursor movement
-        Key::Numpad8 => set!(i8, action.cursor_powering_up, None),
-        Key::Numpad9 => set!(i8, action.cursor_powering_upper_right, None),
-        Key::Numpad6 => set!(i8, action.cursor_powering_right, None),
-        Key::Numpad3 => set!(i8, action.cursor_powering_lower_right, None),
-        Key::Numpad2 => set!(i8, action.cursor_powering_down, None),
-        Key::Numpad1 => set!(i8, action.cursor_powering_lower_left, None),
-        Key::Numpad4 => set!(i8, action.cursor_powering_left, None),
-        Key::Numpad7 => set!(i8, action.cursor_powering_upper_left, None),
-        // scroll movement
-        Key::NumpadAsterisk => set!(i8, action.scroll_powering_up, None),
-        Key::NumpadHyphen => set!(i8, action.scroll_powering_down, None),
-        // modifiers
-        Key::LeftShift => set!(bool, action.sprinting, Some(())),
-        Key::LeftCtrl => set!(bool, action.sprinting, Some(())),
-        Key::LeftAlt => set!(bool, action.sneaking, Some(())),
-        _ => Some(()),
+        macro_rules! set {
+            (bool, $target:expr, $ret:expr) => {{
+                if !action_enabled {
+                    return Some(());
+                }
+                match down {
+                    true => $target = true,
+                    false => $target = false,
+                };
+                $ret
+            }};
+            (i8, $target:expr, $ret:expr) => {{
+                if !action_enabled {
+                    return Some(());
+                }
+                match down {
+                    true => $target = 1,
+                    false => $target = 0,
+                };
+                $ret
+            }};
+        }
+
+        match key {
+            // toggle izuna
+            Key::NumLock => {
+                action.action_enabled = Some(!driver.get_key_state(Key::NumLock).1);
+                Some(())
+            }
+            // mouse buttons
+            Key::Numpad5 => set!(bool, action.button_primary_1, None),
+            Key::NavpadClear => set!(bool, action.button_primary_1, None),
+            Key::NumpadEnter => set!(bool, action.button_primary_2, None),
+            Key::NumpadDel => set!(bool, action.button_primary_3, None),
+            Key::NavpadDelete => set!(bool, action.button_primary_3, None),
+            Key::Numpad0 => set!(bool, action.button_primary_4, None),
+            Key::NumpadPlus => set!(bool, action.button_secondary, None),
+            Key::NumpadSlash => set!(bool, action.button_tertiary, None),
+            // cursor movement (numpad ver)
+            Key::Numpad8 => set!(i8, action.cursor_powering_up, None),
+            Key::Numpad9 => set!(i8, action.cursor_powering_upper_right, None),
+            Key::Numpad6 => set!(i8, action.cursor_powering_right, None),
+            Key::Numpad3 => set!(i8, action.cursor_powering_lower_right, None),
+            Key::Numpad2 => set!(i8, action.cursor_powering_down, None),
+            Key::Numpad1 => set!(i8, action.cursor_powering_lower_left, None),
+            Key::Numpad4 => set!(i8, action.cursor_powering_left, None),
+            Key::Numpad7 => set!(i8, action.cursor_powering_upper_left, None),
+            // cursor movement (navpad ver)
+            Key::NavpadUp => set!(i8, action.cursor_powering_up, None),
+            Key::NavpadPrior => set!(i8, action.cursor_powering_upper_right, None),
+            Key::NavpadRight => set!(i8, action.cursor_powering_right, None),
+            Key::NavpadNext => set!(i8, action.cursor_powering_lower_right, None),
+            Key::NavpadDown => set!(i8, action.cursor_powering_down, None),
+            Key::NavpadEnd => set!(i8, action.cursor_powering_lower_left, None),
+            Key::NavpadLeft => set!(i8, action.cursor_powering_left, None),
+            Key::NavpadHome => set!(i8, action.cursor_powering_upper_left, None),
+            // scroll movement
+            Key::NumpadAsterisk => set!(i8, action.scroll_powering_up, None),
+            Key::NumpadHyphen => set!(i8, action.scroll_powering_down, None),
+            // modifiers
+            Key::LeftShift => set!(bool, action.sprinting, Some(())),
+            Key::LeftCtrl => set!(bool, action.sprinting, Some(())),
+            Key::LeftAlt => set!(bool, action.sneaking, Some(())),
+            _ => Some(()),
+        }
     }
 }
 
@@ -423,11 +470,7 @@ fn _apply_scroll_state(
     }
     // apply friction
     speed_len = (speed_len - cfg.brake * dt).max(0.0);
-    let speed = if speed {
-        speed_len
-    } else {
-        -speed_len
-    };
+    let speed = if speed { speed_len } else { -speed_len };
     // adjust position
     let d_pos = speed * generic_scale * dt;
     (accel, speed, d_pos)
