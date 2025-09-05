@@ -321,7 +321,20 @@ fn _next_frame(
         - action.cursor_powering_lower_left
         + action.cursor_powering_upper_left)
         .abs();
-    let scroll_powering = action.scroll_powering_up + action.scroll_powering_down;
+    let cursor_no_friction = (action.cursor_powering_up
+        + action.cursor_powering_upper_right
+        + action.cursor_powering_right
+        + action.cursor_powering_lower_right
+        + action.cursor_powering_down
+        + action.cursor_powering_lower_left
+        + action.cursor_powering_left
+        + action.cursor_powering_upper_left)
+        > 0
+        && cursor_powering_x == 0
+        && cursor_powering_y == 0;
+    let scroll_powering = (action.scroll_powering_up - action.scroll_powering_down).abs();
+    let scroll_no_friction =
+        (action.scroll_powering_up + action.scroll_powering_down) > 0 && scroll_powering == 0;
 
     // infer velocity modes
     let cursor_mode = _get_velocity_mode(
@@ -357,6 +370,7 @@ fn _next_frame(
         cursor_power,
         _get_stack_power(cursor_powering_x),
         _get_stack_power(cursor_powering_y),
+        cursor_no_friction,
         prev.cursor_accel,
         prev.cursor_speed,
         dt,
@@ -366,6 +380,7 @@ fn _next_frame(
         scroll_mode,
         scroll_power,
         _get_stack_power(scroll_powering),
+        scroll_no_friction,
         prev.scroll_accel,
         prev.scroll_speed,
         dt,
@@ -426,6 +441,7 @@ fn _apply_cursor_state(
     power: Vector,
     stack_power_x: f64,
     stack_power_y: f64,
+    no_friction: bool,
     prev_accel: Vector,
     prev_speed: Vector,
     dt: f64,
@@ -443,7 +459,9 @@ fn _apply_cursor_state(
         speed_len = prev_speed.length();
     }
     // apply friction
-    speed_len = (speed_len - cfg.brake * dt).max(0.0);
+    if !no_friction {
+        speed_len = (speed_len - cfg.brake * dt).max(0.0);
+    }
     let speed = speed * speed_len;
     // adjust position
     let d_pos = speed * generic_scale * dt;
@@ -455,6 +473,7 @@ fn _apply_scroll_state(
     cfg: &VelocityModeConfig,
     power: f64,
     stack_power: f64,
+    no_friction: bool,
     prev_accel: f64,
     prev_speed: f64,
     dt: f64,
@@ -469,7 +488,9 @@ fn _apply_scroll_state(
         speed_len = prev_speed.abs();
     }
     // apply friction
-    speed_len = (speed_len - cfg.brake * dt).max(0.0);
+    if !no_friction {
+        speed_len = (speed_len - cfg.brake * dt).max(0.0);
+    }
     let speed = if speed { speed_len } else { -speed_len };
     // adjust position
     let d_pos = speed * generic_scale * dt;
